@@ -216,7 +216,6 @@ int gxfp_fdt_flow_set_mode(struct gxfp_fdt_flow *flow,
 	}
 
 	if (mode == GXFP_FDT_MODE_WAIT_DOWN) {
-		(void)gxfp_dev_flush_rxq(dev);
 		r = gxfp_cmd_fdt_set_mode(dev, &flow->cmd);
 		if (r < 0)
 			return r;
@@ -228,7 +227,6 @@ int gxfp_fdt_flow_set_mode(struct gxfp_fdt_flow *flow,
 	}
 
 	if (mode == GXFP_FDT_MODE_WAIT_UP) {
-		(void)gxfp_dev_flush_rxq(dev);
 		r = gxfp_cmd_fdt_set_mode(dev, &flow->cmd);
 		if (r < 0)
 			return r;
