@@ -227,6 +227,9 @@ session_rearm_tls_if_needed(struct gxfp_session *s, int enable_log, struct gxfp_
     if (st == GXFP_TLS_HS_INIT || st == GXFP_TLS_HS_CONNECTING)
         return;
 
+    if (st == GXFP_TLS_HS_CONNECTED || st == GXFP_TLS_HS_CAPTURING || st == GXFP_TLS_HS_DONE)
+        return;
+
     gxfp_tls_service_free(&SESSION(s)->svc);
     (void)gxfp_dev_flush_rxq(&SESSION(s)->dev);
 
@@ -408,10 +411,13 @@ gxfp_session_activate(struct gxfp_session *s,
 static void
 session_maybe_finish_activation(struct gxfp_session *s, struct gxfp_session_events *ev)
 {
+    enum gxfp_tls_hs_state st;
+
     if (!s || !s->impl || SESSION(s)->mode != GXFP_MODE_ACTIVATING_TLS)
         return;
 
-    if (gxfp_tls_service_state(&SESSION(s)->svc) != GXFP_TLS_HS_CONNECTED)
+    st = gxfp_tls_service_state(&SESSION(s)->svc);
+    if (st != GXFP_TLS_HS_CONNECTED && st != GXFP_TLS_HS_DONE)
         return;
 
     session_set_fdt_mode(s, ev, GXFP_FDT_MODE_WAIT_UP);
