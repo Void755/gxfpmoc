@@ -132,7 +132,6 @@ void gxfp_tls_service_free(struct gxfp_tls_service *svc)
 	if (!s)
 		return;
 
-	(void)gxfp_cmd_tls_server_exit(s->dev);
 	svc_impl_free(s);
 	svc->impl = NULL;
 }

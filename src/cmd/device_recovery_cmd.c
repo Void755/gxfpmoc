@@ -91,6 +91,21 @@ int gxfp_cmd_set_sleep_mode(struct gxfp_dev *dev)
                                     GXFP_RECOVERY_CMD_TIMEOUT_MS);
 }
 
+int gxfp_cmd_request_pov(struct gxfp_dev *dev)
+{
+    uint8_t payload[2] = { 0x00, 0x00 };
+
+    if (!dev)
+        return -EINVAL;
+
+    return gxfp_cmd_send_expect_ack(dev,
+                                    GXFP_CMD_REQUEST_POV,
+                                    payload,
+                                    (uint16_t)sizeof(payload),
+                                    1,
+                                    GXFP_RECOVERY_CMD_TIMEOUT_MS);
+}
+
 int gxfp_cmd_reset_device(struct gxfp_dev *dev, uint8_t reset_flag)
 {
     uint8_t payload[2] = { reset_flag, GXFP_RESET_DELAY_MAGIC };

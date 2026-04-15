@@ -29,7 +29,7 @@ gxfp_device_recovery(struct gxfp_dev *dev,
 	(void)rr;
 
 	if (unstick_tls) {
-		rr = gxfp_cmd_tls_server_exit(dev);
+		rr = gxfp_cmd_request_pov(dev);
 		(void)rr;
 
 		rr = gxfp_cmd_send_nop(dev);

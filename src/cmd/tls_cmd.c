@@ -54,20 +54,6 @@ int gxfp_cmd_tls_server_init(struct gxfp_dev *dev)
                                       (uint16_t)sizeof(payload));
 }
 
-int gxfp_cmd_tls_server_exit(struct gxfp_dev *dev)
-{
-    uint8_t payload[2] = { 0x00, 0x00 };
-
-    if (!dev)
-        return -EINVAL;
-
-    return gxfp_tls_cmd_send_expect_ack(dev,
-                                        GXFP_CMD_TLS_SERVER_EXIT,
-                                        payload,
-                                        (uint16_t)sizeof(payload),
-                                        500);
-}
-
 int gxfp_cmd_get_image(struct gxfp_dev *dev)
 {
     uint8_t payload[2] = { 0x01, 0x00 };
