@@ -26,29 +26,24 @@ gxfp_device_recovery(struct gxfp_dev *dev,
 	(void)gxfp_dev_flush_rxq(dev);
 
 	rr = gxfp_cmd_notify_power_state(dev);
-	if (rr != 0 && rc == 0)
-		rc = rr;
+	(void)rr;
 
 	if (unstick_tls) {
 		rr = gxfp_cmd_tls_server_exit(dev);
-		if (rr != 0 && rc == 0)
-			rc = rr;
+		(void)rr;
 
 		rr = gxfp_cmd_send_nop(dev);
-		if (rr != 0 && rc == 0)
-			rc = rr;
+		(void)rr;
 
 		rr = gxfp_cmd_tls_unlock(dev);
-		if (rr != 0 && rc == 0)
-			rc = rr;
+		(void)rr;
 	}
 
 	rr = gxfp_cmd_set_sleep_mode(dev);
-	if (rr != 0 && rc == 0)
-		rc = rr;
+	(void)rr;
 
 	if (reset_flag != 0) {
-		rr = gxfp_cmd_hard_reset_mcu(dev, reset_flag);
+		rr = gxfp_cmd_reset_device(dev, reset_flag);
 		if (rr != 0 && rc == 0)
 			rc = rr;
 	}

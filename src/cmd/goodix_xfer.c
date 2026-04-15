@@ -28,30 +28,6 @@ int gxfp_goodix_send_async(struct gxfp_dev *dev, uint8_t cmd, const void *payloa
 	return gxfp_dev_send_packet(dev, GOODIX_MP_TYPE_CMD, buf, (uint16_t)frame_len);
 }
 
-int gxfp_goodix_xfer(struct gxfp_dev *dev,
-			 uint8_t req_cmd,
-			 uint8_t expect_cmd,
-			 const void *payload,
-			 uint16_t payload_len,
-			 void *rx,
-			 uint32_t rx_cap,
-			 uint32_t *out_rx_len,
-			 int timeout_ms)
-{
-	return gxfp_goodix_request_selected(dev,
-					       req_cmd,
-					       expect_cmd,
-					       payload,
-					       payload_len,
-					       rx,
-					       rx_cap,
-					       out_rx_len,
-					       1,
-					       timeout_ms,
-					       NULL,
-					       NULL);
-}
-
 int gxfp_goodix_wait_selected(struct gxfp_dev *dev,
 				 uint8_t expect_cmd,
 				 void *rx,

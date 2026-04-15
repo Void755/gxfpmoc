@@ -40,16 +40,6 @@ int gxfp_goodix_request_selected(struct gxfp_dev *dev,
 				    gxfp_goodix_frame_selector_fn selector,
 				    void *selector_ctx);
 
-int gxfp_goodix_xfer(struct gxfp_dev *dev,
-			 uint8_t req_cmd,
-			 uint8_t expect_cmd,
-			 const void *payload,
-			 uint16_t payload_len,
-			 void *rx,
-			 uint32_t rx_cap,
-			 uint32_t *out_rx_len,
-			 int timeout_ms);
-
 #ifdef __cplusplus
 }
 #endif

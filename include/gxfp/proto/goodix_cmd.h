@@ -2,7 +2,7 @@
 
 #define GXFP_CMD_SEND_NOP            0x01
 #define GXFP_CMD_NOTIFY_POWER_STATE  0x0E
-#define GXFP_CMD_HARD_RESET_MCU      0xA1
+#define GXFP_CMD_RESET_DEVICE        0xA1
 
 #define GXFP_CMD_FDT_DOWN            0x32
 #define GXFP_CMD_FDT_UP              0x34

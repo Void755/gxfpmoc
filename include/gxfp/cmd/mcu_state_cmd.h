@@ -42,8 +42,7 @@ int gxfp_mcu_state_parse(const uint8_t *buf, size_t len,
 			 struct gxfp_mcu_state *out);
 
 int gxfp_mcu_state_query(struct gxfp_dev *dev,
-			      struct gxfp_mcu_state *out_state,
-			      int timeout_ms);
+			      struct gxfp_mcu_state *out_state);
 
 #ifdef __cplusplus
 }

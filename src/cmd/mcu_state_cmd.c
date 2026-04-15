@@ -68,8 +68,7 @@ static void build_trigger_payload(uint8_t out[5])
 }
 
 int gxfp_mcu_state_query(struct gxfp_dev *dev,
-			      struct gxfp_mcu_state *out_state,
-			      int timeout_ms)
+			      struct gxfp_mcu_state *out_state)
 {
 	uint8_t trigger[5];
 	uint8_t *rx = NULL;
@@ -86,7 +85,7 @@ int gxfp_mcu_state_query(struct gxfp_dev *dev,
 
 	(void)gxfp_dev_flush_rxq(dev);
 	build_trigger_payload(trigger);
-	r = gxfp_goodix_xfer(dev,
+	r = gxfp_goodix_request_selected(dev,
 				       GXFP_CMD_TRIGGER_MCU_STATE,
 				       GXFP_CMD_QUERY_MCU_STATE,
 				       trigger,
@@ -94,7 +93,10 @@ int gxfp_mcu_state_query(struct gxfp_dev *dev,
 				       rx,
 				       4096,
 				       &rx_len,
-				       timeout_ms > 0 ? timeout_ms : 500);
+					   1,
+				       500,
+					   NULL,
+					   NULL);
 	if (r != 0) {
 		free(rx);
 		return r;
