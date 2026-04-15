@@ -20,7 +20,7 @@
 #define FDT_STATUS_IRQ_REVERSE_2 0x0082
 
 #define FDT_UP_DEFAULT_OFFSET 0x15u
-#define FDT_UP_NOTOUCH_FALLBACK 0x1380u
+#define FDT_UP_NOTOUCH_FALLBACK 0x1300u
 
 static void fdt_downbase_from_raw(const uint8_t *raw_base,
 				  size_t raw_len,
@@ -38,10 +38,11 @@ static void fdt_downbase_from_raw(const uint8_t *raw_base,
 
 	for (i = 0; i < entries; i++) {
 		uint16_t raw = gxfp_le16(raw_base + (i * 2));
-		uint8_t half = (uint8_t)((raw >> 1) & 0xffu);
+		uint16_t half = (uint16_t)((raw >> 1) & 0xffffu);
+		uint16_t encoded = (uint16_t)((half << 8) | 0x80u);
 
-		out_table[(i * 2) + 0] = 0x80u;
-		out_table[(i * 2) + 1] = half;
+		out_table[(i * 2) + 0] = (uint8_t)(encoded & 0xffu);
+		out_table[(i * 2) + 1] = (uint8_t)((encoded >> 8) & 0xffu);
 	}
 }
 
@@ -70,14 +71,14 @@ static void fdt_upbase_from_raw(uint16_t touchflag,
 		uint16_t raw = gxfp_le16(raw_base + (i * 2));
 		uint16_t half = (uint16_t)((raw >> 1) & 0xffffu);
 		uint16_t offset = (dac_offset == 0) ? FDT_UP_DEFAULT_OFFSET : (uint16_t)dac_offset;
-		uint16_t encoded = (uint16_t)(((half + offset) << 8) | 0x80u);
+		uint16_t encoded = (uint16_t)(((half + offset) << 8) | (half + offset));
 		uint16_t prev;
 
 		if (second_flag == 0 && ((touchflag >> i) & 0x1u) == 0) {
 			if (dac_offset == 0)
-				encoded = FDT_UP_NOTOUCH_FALLBACK;
+				encoded = (uint16_t)((encoded >> 8) | FDT_UP_NOTOUCH_FALLBACK);
 			else
-				encoded = (uint16_t)((((uint16_t)(dac_offset - 2)) << 8) | 0x80u);
+				encoded = (uint16_t)((((uint16_t)(dac_offset - 2)) << 8) | (encoded >> 8));
 		}
 
 		prev = gxfp_le16(merged + (i * 2));
@@ -125,7 +126,7 @@ static void fdt_base_table_update_from_frame(struct gxfp_cmd_fdt_state *state,
 				   state->up_dac_offset,
 				   raw_base,
 				   raw_len,
-				   state->base_table_5130);
+				   state->up_table_5130);
 		return;
 	}
 
@@ -143,7 +144,7 @@ static void fdt_base_table_update_from_frame(struct gxfp_cmd_fdt_state *state,
 		if (raw_len > (GXFP_FDT_BASE_UPDATE_ENTRIES * 2))
 			raw_len = GXFP_FDT_BASE_UPDATE_ENTRIES * 2;
 
-		fdt_downbase_from_raw(raw_base, raw_len, state->base_table_5130);
+		fdt_downbase_from_raw(raw_base, raw_len, state->down_table_5130);
 	}
 }
 

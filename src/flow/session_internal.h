@@ -37,6 +37,12 @@ struct gxfp_session_impl {
 
     struct gxfp_decoded_image pending_img;
     int pending_img_ready;
+
+    struct {
+        uint16_t tcode;
+        uint16_t fdt_delta;
+        uint8_t has_tcode_delta;
+    } otp_ctx;
 };
 
 #define SESSION(s) ((struct gxfp_session_impl *) ((s)->impl))

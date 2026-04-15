@@ -1,6 +1,9 @@
 #include "gxfp/flow/session.h"
 
 #include "gxfp/algo/image/fpn.h"
+#include "gxfp/algo/sensor_cfg.h"
+#include "gxfp/cmd/device_recovery_cmd.h"
+#include "gxfp/cmd/sensor_cfg_cmd.h"
 #include "gxfp/flow/fdt.h"
 #include "gxfp/flow/device_recovery.h"
 #include "gxfp/io/dev.h"
@@ -46,6 +49,64 @@ static void session_set_error(struct gxfp_session *s,
 static int gxfp_session_mode_has_io(const struct gxfp_session *s);
 static void gxfp_session_stop_run(struct gxfp_session *s);
 static void gxfp_session_reset_runtime(struct gxfp_session *s);
+static void session_apply_fdt_runtime_from_otp(struct gxfp_session *s);
+static int session_apply_milanl_cfg(struct gxfp_session *s);
+
+static int
+session_apply_milanl_cfg(struct gxfp_session *s)
+{
+    uint8_t otp[256];
+    uint16_t otp_len = 0;
+    struct gxfp_milanl_otp_cfg otp_cfg;
+    const uint8_t *template_data = NULL;
+    size_t template_len = 0;
+    uint8_t cfg_blob[GXFP_MILANL_CFG_LEN];
+    int cfg_blob_len;
+    uint8_t ack_status = 0xff;
+    int r;
+
+    if (!s || !s->impl)
+        return -EINVAL;
+
+    r = gxfp_cmd_read_otp(&SESSION(s)->dev, otp, (uint16_t)sizeof(otp), &otp_len);
+    if (r < 0)
+        return r;
+
+    r = gxfp_milanl_parse_otp(otp, (size_t)otp_len, &otp_cfg);
+    if (r < 0)
+        return r;
+
+    r = gxfp_milanl_get_default_cfg_template(&template_data, &template_len);
+    if (r < 0)
+        return r;
+
+    cfg_blob_len = gxfp_milanl_prepare_cfg_blob(template_data,
+                                                template_len,
+                                                cfg_blob,
+                                                sizeof(cfg_blob));
+    if (cfg_blob_len < 0)
+        return cfg_blob_len;
+
+    r = gxfp_milanl_apply_otp_patch(cfg_blob,
+                                    (size_t)cfg_blob_len,
+                                    &otp_cfg);
+    if (r < 0)
+        return r;
+
+    r = gxfp_cmd_upload_config_mcu(&SESSION(s)->dev,
+                                   cfg_blob,
+                                   (uint16_t)cfg_blob_len,
+                                   &ack_status);
+    if (r < 0)
+        return r;
+
+    SESSION(s)->otp_ctx.tcode = otp_cfg.tcode;
+    SESSION(s)->otp_ctx.fdt_delta = otp_cfg.fdt_delta;
+    SESSION(s)->otp_ctx.has_tcode_delta = otp_cfg.has_tcode_delta;
+    session_apply_fdt_runtime_from_otp(s);
+
+    return 0;
+}
 
 static void
 session_set_error(struct gxfp_session *s,
@@ -122,6 +183,10 @@ gxfp_session_reset_runtime(struct gxfp_session *s)
     memset(&SESSION(s)->dev, 0, sizeof(SESSION(s)->dev));
     memset(&SESSION(s)->svc, 0, sizeof(SESSION(s)->svc));
     gxfp_fdt_flow_init(&SESSION(s)->fdt);
+    SESSION(s)->otp_ctx.tcode = 0;
+    SESSION(s)->otp_ctx.fdt_delta = 0;
+    SESSION(s)->otp_ctx.has_tcode_delta = 0;
+    session_apply_fdt_runtime_from_otp(s);
 
     free(SESSION(s)->psk);
     SESSION(s)->psk = NULL;
@@ -129,6 +194,24 @@ gxfp_session_reset_runtime(struct gxfp_session *s)
 
     session_reset_buffers(s);
     SESSION(s)->mode = GXFP_MODE_CLOSED;
+}
+
+static void
+session_apply_fdt_runtime_from_otp(struct gxfp_session *s)
+{
+    int16_t fdt_delta = 0;
+
+    if (!s || !s->impl)
+        return;
+
+    if (SESSION(s)->otp_ctx.has_tcode_delta)
+        fdt_delta = (int16_t)SESSION(s)->otp_ctx.fdt_delta;
+
+    gxfp_cmd_fdt_state_set_runtime(&SESSION(s)->fdt.cmd,
+                                   0,
+                                   0,
+                                   0,
+                                   fdt_delta);
 }
 
 static void
@@ -346,6 +429,17 @@ gxfp_session_open(struct gxfp_session *s,
 
     (void)gxfp_dev_flush_rxq(&SESSION(s)->dev);
 
+    r = session_apply_milanl_cfg(s);
+    if (r < 0) {
+        if (errbuf && errbuf_len)
+            snprintf(errbuf,
+                     errbuf_len,
+                     "otp/config bootstrap failed: %s",
+                     strerror(-r));
+        gxfp_session_reset_runtime(s);
+        return r;
+    }
+
     SESSION(s)->psk = (uint8_t *)malloc(psk_len);
     if (!SESSION(s)->psk) {
         gxfp_session_reset_runtime(s);
@@ -364,6 +458,7 @@ gxfp_session_open(struct gxfp_session *s,
     }
 
     gxfp_fdt_flow_init(&SESSION(s)->fdt);
+    session_apply_fdt_runtime_from_otp(s);
     SESSION(s)->mode = GXFP_MODE_READY;
     return 0;
 }
@@ -401,6 +496,7 @@ gxfp_session_activate(struct gxfp_session *s,
         return ev->error_code ? ev->error_code : -EIO;
 
     gxfp_fdt_flow_init(&SESSION(s)->fdt);
+    session_apply_fdt_runtime_from_otp(s);
     SESSION(s)->mode = GXFP_MODE_ACTIVATING_TLS;
 
     ev->request_tick = 1;
