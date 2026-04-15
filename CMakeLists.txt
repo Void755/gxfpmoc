@@ -11,6 +11,7 @@ find_package(MbedTLS REQUIRED)
 add_library(gxfp
 		src/io/dev.c
 		src/algo/common.c
+		src/algo/sensor_cfg.c
 		src/algo/image/plain.c
 		src/algo/image/decoder.c
 		src/algo/image/fpn.c
@@ -27,6 +28,7 @@ add_library(gxfp
 		src/cmd/device_recovery_cmd.c
 		src/cmd/fdt_cmd.c
 		src/cmd/mcu_state_cmd.c
+		src/cmd/sensor_cfg_cmd.c
 )
 
 target_include_directories(gxfp
