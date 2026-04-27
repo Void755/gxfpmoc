@@ -17,6 +17,8 @@
 #define GXFP_CMD_ACK                 0xB0
 #define GXFP_CMD_UPLOAD_CONFIG_MCU   0x90
 
+#define GXFP_CMD_REG_READ            0x82
+
 #define GXFP_CMD_TLS_SERVER_INIT     0xD0
 #define GXFP_CMD_D01                 0xD1
 #define GXFP_CMD_SET_SLEEP_MODE      0xD2

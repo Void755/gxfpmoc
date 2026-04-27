@@ -29,6 +29,7 @@ add_library(gxfp
 		src/cmd/fdt_cmd.c
 		src/cmd/mcu_state_cmd.c
 		src/cmd/sensor_cfg_cmd.c
+		src/cmd/register_cmd.c
 )
 
 target_include_directories(gxfp

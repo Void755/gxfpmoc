@@ -245,6 +245,9 @@ int main(int argc, char **argv)
 	}
 
 	for (;;) {
+		fprintf(stderr, "Press Enter to capture.\n");
+		if (getchar() != '\n')
+			continue;
 		struct gxfp_decoded_image img;
 		fprintf(stderr, "FDT armed, waiting finger down...\n");
 		gxfp_session_events_clear(&ev);

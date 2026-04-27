@@ -3,6 +3,7 @@
 #include "gxfp/algo/image/fpn.h"
 #include "gxfp/algo/sensor_cfg.h"
 #include "gxfp/cmd/device_recovery_cmd.h"
+#include "gxfp/cmd/register_cmd.h"
 #include "gxfp/cmd/sensor_cfg_cmd.h"
 #include "gxfp/flow/fdt.h"
 #include "gxfp/flow/device_recovery.h"
@@ -429,15 +430,19 @@ gxfp_session_open(struct gxfp_session *s,
 
     (void)gxfp_dev_flush_rxq(&SESSION(s)->dev);
 
-    r = session_apply_milanl_cfg(s);
-    if (r < 0) {
-        if (errbuf && errbuf_len)
-            snprintf(errbuf,
-                     errbuf_len,
-                     "otp/config bootstrap failed: %s",
-                     strerror(-r));
-        gxfp_session_reset_runtime(s);
-        return r;
+    uint16_t chip_id = 0;
+    r = gxfp_cmd_read_chip_id(&SESSION(s)->dev, &chip_id);
+    if (r == 0 && chip_id == 0x2208) {
+        r = session_apply_milanl_cfg(s);
+        if (r < 0) {
+            if (errbuf && errbuf_len)
+                snprintf(errbuf,
+                         errbuf_len,
+                         "otp/config bootstrap failed: %s",
+                         strerror(-r));
+            gxfp_session_reset_runtime(s);
+            return r;
+        }
     }
 
     SESSION(s)->psk = (uint8_t *)malloc(psk_len);
