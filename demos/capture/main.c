@@ -5,6 +5,7 @@
 #include "gxfp/algo/common.h"
 
 #include <errno.h>
+#include <getopt.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -167,12 +168,14 @@ static int save_image_outputs(const struct gxfp_decoded_image *img)
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage:\n"
-		"  %s --psk-raw32 <path>\n"
+		"Usage: %s --psk-raw32 <path>\n"
 		"\n"
-		"output file:\n"
-		"  finger.pgm  - 16-bit PGM\n"
-		"\n",
+		"Options:\n"
+		"  --psk-raw32 <path>   path to 32-byte raw PSK binary file (required)\n"
+		"  -h, --help           show this help\n"
+		"\n"
+		"Output:\n"
+		"  finger.pgm           16-bit PGM fingerprint image\n",
 		argv0);
 }
 
@@ -185,24 +188,31 @@ int main(int argc, char **argv)
 	struct gxfp_session sess;
 	struct gxfp_session_events ev;
 	int rc;
-	int i;
 
-	if (argc < 2) {
-		usage(argv[0]);
-		return 2;
-	}
+	struct option long_opts[] = {
+		{"psk-raw32", required_argument, NULL, 'p'},
+		{"help",      no_argument,       NULL, 'h'},
+		{NULL, 0, NULL, 0}
+	};
 
-	for (i = 1; i < argc; i++) {
-		if (strcmp(argv[i], "--psk-raw32") == 0 && i + 1 < argc) {
-			psk_raw32_file = argv[++i];
-			continue;
+	int opt;
+	while ((opt = getopt_long(argc, argv, "p:h", long_opts, NULL)) != -1) {
+		switch (opt) {
+		case 'p':
+			psk_raw32_file = optarg;
+			break;
+		case 'h':
+			usage(argv[0]);
+			return 0;
+		default:
+			usage(argv[0]);
+			return 2;
 		}
-		usage(argv[0]);
-		return 2;
 	}
 
 	if (!psk_raw32_file) {
-		fprintf(stderr, "need --psk-raw32\n");
+		fprintf(stderr, "Missing required option: --psk-raw32\n");
+		usage(argv[0]);
 		return 2;
 	}
 

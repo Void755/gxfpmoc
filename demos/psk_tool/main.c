@@ -7,6 +7,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,17 +17,25 @@
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage:\n"
-		"  %s --build-bb010002 <out.bin> [--psk-raw32 <psk.bin>] [--seed8 <seed8.bin>] [--sealed-psk <blob.bin>] [--out-psk-raw32 <psk_out.bin>] [--no-pad4]\n"
-		"  %s --build-bb010002-raw <out.bin> [--psk-raw32 <psk.bin>] [--seed8 <seed8.bin>] [--out-psk-raw32 <psk_out.bin>] [--no-pad4]\n"
-		"  %s --dump-bb010002 <out.bin>\n"
-		"  %s --dump-bb010003 <out.bin>\n"
-		"  %s --upload-bb010002 <in.bin>\n"
+		"Usage: %s <action> [options]\n"
 		"\n"
-		"notes:\n"
-		"  - Build mode uses external psk/seed8 when provided; otherwise random values are generated.\n"
-		"  - --build-bb010002-raw leaves the sealed-psk region empty.\n",
-		argv0, argv0, argv0, argv0, argv0);
+		"Actions (exactly one required):\n"
+		"  --build-bb010002 <out.bin>        build full BB010002 provisioning blob\n"
+		"  --build-bb010002-raw <out.bin>    build raw BB010002 blob (sealed-psk region empty)\n"
+		"  --dump-bb010002 <out.bin>         dump BB010002 payload from device\n"
+		"  --dump-bb010003 <out.bin>         dump BB010003 payload from device\n"
+		"  --upload-bb010002 <in.bin>        upload BB010002 blob to device\n"
+		"\n"
+		"Build options:\n"
+		"  --psk-raw32 <path>      32-byte raw PSK file (default: generate random)\n"
+		"  --seed8 <path>          8-byte seed file (default: generate random)\n"
+		"  --sealed-psk <path>     pre-sealed PSK blob file\n"
+		"  --out-psk-raw32 <path>  write generated PSK to file\n"
+		"  --no-pad4               skip 4-byte alignment padding\n"
+		"\n"
+		"Other:\n"
+		"  -h, --help              show this help\n",
+		argv0);
 }
 
 static int fill_random_bytes(uint8_t *buf, size_t len)
@@ -117,66 +126,37 @@ int main(int argc, char **argv)
 	struct gxfp_dev dev;
 	int rc;
 
-	if (argc < 2) {
-		usage(argv[0]);
-		return 2;
-	}
+	struct option long_opts[] = {
+		{"build-bb010002",     required_argument, NULL, 'B'},
+		{"build-bb010002-raw", required_argument, NULL, 'R'},
+		{"dump-bb010002",      required_argument, NULL, 'D'},
+		{"dump-bb010003",      required_argument, NULL, 'E'},
+		{"upload-bb010002",    required_argument, NULL, 'U'},
+		{"psk-raw32",          required_argument, NULL, 'p'},
+		{"seed8",              required_argument, NULL, 's'},
+		{"sealed-psk",         required_argument, NULL, 'S'},
+		{"out-psk-raw32",      required_argument, NULL, 'o'},
+		{"no-pad4",            no_argument,       NULL, 'N'},
+		{"help",               no_argument,       NULL, 'h'},
+		{NULL, 0, NULL, 0}
+	};
 
-	for (int i = 1; i < argc; i++) {
-		if (strcmp(argv[i], "--build-bb010002") == 0 && i + 1 < argc) {
-			if (argv[i + 1][0] == '-') {
-				usage(argv[0]);
-				fprintf(stderr, "missing output file after --build-bb010002\n");
-				return 2;
-			}
-			build_bb010002 = argv[++i];
-			continue;
+	int opt;
+	while ((opt = getopt_long(argc, argv, "B:R:D:E:U:p:s:S:o:Nh", long_opts, NULL)) != -1) {
+		switch (opt) {
+		case 'B': build_bb010002 = optarg; break;
+		case 'R': build_bb010002_raw = optarg; break;
+		case 'D': dump_bb010002 = optarg; break;
+		case 'E': dump_bb010003 = optarg; break;
+		case 'U': upload_bb010002 = optarg; break;
+		case 'p': psk_raw32 = optarg; break;
+		case 's': seed8_file = optarg; break;
+		case 'S': sealed_psk_file = optarg; break;
+		case 'o': out_psk_raw32 = optarg; break;
+		case 'N': no_pad4 = 1; break;
+		case 'h': usage(argv[0]); return 0;
+		default:  usage(argv[0]); return 2;
 		}
-		if (strcmp(argv[i], "--build-bb010002-raw") == 0 && i + 1 < argc) {
-			if (argv[i + 1][0] == '-') {
-				usage(argv[0]);
-				fprintf(stderr, "missing output file after --build-bb010002-raw\n");
-				return 2;
-			}
-			build_bb010002_raw = argv[++i];
-			continue;
-		}
-		if (strcmp(argv[i], "--psk-raw32") == 0 && i + 1 < argc) {
-			psk_raw32 = argv[++i];
-			continue;
-		}
-		if (strcmp(argv[i], "--seed8") == 0 && i + 1 < argc) {
-			seed8_file = argv[++i];
-			continue;
-		}
-		if (strcmp(argv[i], "--out-psk-raw32") == 0 && i + 1 < argc) {
-			out_psk_raw32 = argv[++i];
-			continue;
-		}
-		if (strcmp(argv[i], "--sealed-psk") == 0 && i + 1 < argc) {
-			sealed_psk_file = argv[++i];
-			continue;
-		}
-		if (strcmp(argv[i], "--no-pad4") == 0) {
-			no_pad4 = 1;
-			continue;
-		}
-		if (strcmp(argv[i], "--dump-bb010002") == 0 &&
-		    i + 1 < argc) {
-			dump_bb010002 = argv[++i];
-			continue;
-		}
-		if (strcmp(argv[i], "--dump-bb010003") == 0 &&
-		    i + 1 < argc) {
-			dump_bb010003 = argv[++i];
-			continue;
-		}
-		if (strcmp(argv[i], "--upload-bb010002") == 0 && i + 1 < argc) {
-			upload_bb010002 = argv[++i];
-			continue;
-		}
-		usage(argv[0]);
-		return 2;
 	}
 
 	int action_cnt = 0;

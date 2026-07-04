@@ -2,14 +2,20 @@
 #include "gxfp/io/dev.h"
 
 #include <fcntl.h>
+#include <getopt.h>
 #include <stdio.h>
 #include <string.h>
 
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"usage:\n"
-		"  %s [--no-unstick] [--reset-mcu] [--reset-sensor]\n",
+		"Usage: %s [options]\n"
+		"\n"
+		"Options:\n"
+		"  --no-unstick    skip TLS un-sticking\n"
+		"  --reset-mcu     reset MCU after recovery\n"
+		"  --reset-sensor  reset sensor after recovery\n"
+		"  -h, --help      show this help\n",
 		argv0);
 }
 
@@ -20,28 +26,24 @@ int main(int argc, char **argv)
 	int reset_mcu = 0;
 	int reset_sensor = 0;
 	int r;
-	int i;
 
-	if (argc < 2) {
-		usage(argv[0]);
-		return 2;
-	}
+	struct option long_opts[] = {
+		{"no-unstick",   no_argument, NULL, 'U'},
+		{"reset-mcu",    no_argument, NULL, 'M'},
+		{"reset-sensor", no_argument, NULL, 'S'},
+		{"help",         no_argument, NULL, 'h'},
+		{NULL, 0, NULL, 0}
+	};
 
-	for (i = 1; i < argc; i++) {
-		if (strcmp(argv[i], "--no-unstick") == 0) {
-			unstick_tls = 0;
-			continue;
+	int opt;
+	while ((opt = getopt_long(argc, argv, "UMS", long_opts, NULL)) != -1) {
+		switch (opt) {
+		case 'U': unstick_tls = 0; break;
+		case 'M': reset_mcu = 1; break;
+		case 'S': reset_sensor = 1; break;
+		case 'h': usage(argv[0]); return 0;
+		default:  usage(argv[0]); return 2;
 		}
-		if (strcmp(argv[i], "--reset-mcu") == 0) {
-			reset_mcu = 1;
-			continue;
-		}
-		if (strcmp(argv[i], "--reset-sensor") == 0) {
-			reset_sensor = 1;
-			continue;
-		}
-		usage(argv[0]);
-		return 2;
 	}
 
 	memset(&dev, 0, sizeof(dev));
