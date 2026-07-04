@@ -285,30 +285,30 @@ int gxfp_payload_build_bb020003_hash_prefix(const uint8_t *bb010003_wb_data,
     return 0;
 }
 
-static int build_bb010002_core(const uint8_t *psk,
-                               size_t psk_len,
-                               const uint8_t seed8[8],
-                               const uint8_t *bb010003_wb_data,
-                               size_t bb010003_wb_data_len,
-                               int pad4,
-                               uint8_t **out_blob,
-                               size_t *out_blob_len)
+int gxfp_payload_build_bb010002(const uint8_t *sealed_psk,
+                                size_t sealed_psk_len,
+                                const uint8_t seed8[8],
+                                const uint8_t *bb010003_wb_data,
+                                size_t bb010003_wb_data_len,
+                                int pad4,
+                                uint8_t **out_blob,
+                                size_t *out_blob_len)
 {
     uint32_t len_field;
     uint8_t *out;
     size_t out_len;
     size_t off = 0;
 
-    if ((!psk && psk_len != 0) || !seed8 || !bb010003_wb_data || bb010003_wb_data_len == 0 ||
+    if ((!sealed_psk && sealed_psk_len != 0) || !seed8 || !bb010003_wb_data || bb010003_wb_data_len == 0 ||
         !out_blob || !out_blob_len)
         return -EINVAL;
 
-    if (psk_len > 0xFFFFFFFFu - 8u)
+    if (sealed_psk_len > 0xFFFFFFFFu - 8u)
         return -EOVERFLOW;
     if (bb010003_wb_data_len > 0xFFFFFFFFu)
         return -EOVERFLOW;
 
-    out_len = 8u + psk_len + 8u + 8u + bb010003_wb_data_len;
+    out_len = 8u + sealed_psk_len + 8u + 8u + bb010003_wb_data_len;
     if (pad4)
         out_len = (out_len + 3u) & ~3u;
 
@@ -318,12 +318,13 @@ static int build_bb010002_core(const uint8_t *psk,
 
     gxfp_le32enc(out + off, 0xBB010002u);
     off += 4;
-    len_field = (uint32_t)(psk_len + 8u);
+    len_field = (uint32_t)(sealed_psk_len + 8u);
     gxfp_le32enc(out + off, len_field);
     off += 4;
 
-    memcpy(out + off, psk, psk_len);
-    off += psk_len;
+    if (sealed_psk_len)
+        memcpy(out + off, sealed_psk, sealed_psk_len);
+    off += sealed_psk_len;
     memcpy(out + off, seed8, 8);
     off += 8;
 
@@ -336,40 +337,4 @@ static int build_bb010002_core(const uint8_t *psk,
     *out_blob = out;
     *out_blob_len = out_len;
     return 0;
-}
-
-int gxfp_payload_build_bb010002(const uint8_t *sealed_psk,
-                                size_t sealed_psk_len,
-                                const uint8_t seed8[8],
-                                const uint8_t *bb010003_wb_data,
-                                size_t bb010003_wb_data_len,
-                                int pad4,
-                                uint8_t **out_blob,
-                                size_t *out_blob_len)
-{
-    return build_bb010002_core(sealed_psk,
-                               sealed_psk_len,
-                               seed8,
-                               bb010003_wb_data,
-                               bb010003_wb_data_len,
-                               pad4,
-                               out_blob,
-                               out_blob_len);
-}
-
-int gxfp_payload_build_bb010002_raw_psk(const uint8_t seed8[8],
-                                        const uint8_t *bb010003_wb_data,
-                                        size_t bb010003_wb_data_len,
-                                        int pad4,
-                                        uint8_t **out_blob,
-                                        size_t *out_blob_len)
-{
-    return build_bb010002_core(NULL,
-                               0,
-                               seed8,
-                               bb010003_wb_data,
-                               bb010003_wb_data_len,
-                               pad4,
-                               out_blob,
-                               out_blob_len);
 }

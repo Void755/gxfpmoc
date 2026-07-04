@@ -21,7 +21,6 @@ static void usage(const char *argv0)
 		"\n"
 		"Actions (exactly one required):\n"
 		"  --build-bb010002 <out.bin>        build full BB010002 provisioning blob\n"
-		"  --build-bb010002-raw <out.bin>    build raw BB010002 blob (sealed-psk region empty)\n"
 		"  --dump-bb010002 <out.bin>         dump BB010002 payload from device\n"
 		"  --dump-bb010003 <out.bin>         dump BB010003 payload from device\n"
 		"  --upload-bb010002 <in.bin>        upload BB010002 blob to device\n"
@@ -117,7 +116,6 @@ int main(int argc, char **argv)
 	const char *dump_bb010003 = NULL;
 	const char *upload_bb010002 = NULL;
 	const char *build_bb010002 = NULL;
-	const char *build_bb010002_raw = NULL;
 	const char *psk_raw32 = NULL;
 	const char *out_psk_raw32 = NULL;
 	const char *seed8_file = NULL;
@@ -128,7 +126,6 @@ int main(int argc, char **argv)
 
 	struct option long_opts[] = {
 		{"build-bb010002",     required_argument, NULL, 'B'},
-		{"build-bb010002-raw", required_argument, NULL, 'R'},
 		{"dump-bb010002",      required_argument, NULL, 'D'},
 		{"dump-bb010003",      required_argument, NULL, 'E'},
 		{"upload-bb010002",    required_argument, NULL, 'U'},
@@ -142,10 +139,9 @@ int main(int argc, char **argv)
 	};
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "B:R:D:E:U:p:s:S:o:Nh", long_opts, NULL)) != -1) {
+	while ((opt = getopt_long(argc, argv, "B:D:E:U:p:s:S:o:Nh", long_opts, NULL)) != -1) {
 		switch (opt) {
 		case 'B': build_bb010002 = optarg; break;
-		case 'R': build_bb010002_raw = optarg; break;
 		case 'D': dump_bb010002 = optarg; break;
 		case 'E': dump_bb010003 = optarg; break;
 		case 'U': upload_bb010002 = optarg; break;
@@ -161,7 +157,6 @@ int main(int argc, char **argv)
 
 	int action_cnt = 0;
 	action_cnt += build_bb010002 != NULL;
-	action_cnt += build_bb010002_raw != NULL;
 	action_cnt += dump_bb010002 != NULL;
 	action_cnt += dump_bb010003 != NULL;
 	action_cnt += upload_bb010002 != NULL;
@@ -170,7 +165,7 @@ int main(int argc, char **argv)
 		return 2;
 	}
 
-	if (build_bb010002 || build_bb010002_raw) {
+	if (build_bb010002) {
 		uint8_t *psk = NULL;
 		size_t psk_len = 0;
 		FILE *psk_out = NULL;
@@ -215,30 +210,26 @@ int main(int argc, char **argv)
 			return 1;
 		}
 
-		if (build_bb010002_raw) {
-			rc = gxfp_payload_build_bb010002_raw_psk(seed8,
+		if (sealed_psk_file) {
+			rc = gxfp_read_file_all(sealed_psk_file, &sealed, &sealed_len);
+			if (rc < 0) {
+				fprintf(stderr, "read sealed-psk failed: %s\n", strerror(-rc));
+				free(psk);
+				free(seed8);
+				free(wb);
+				return 1;
+			}
+			rc = gxfp_payload_build_bb010002(sealed,
+							 sealed_len,
+							 seed8,
 							 wb,
 							 wb_len,
 							 no_pad4 ? 0 : 1,
 							 &bb,
 							 &bb_len);
 		} else {
-			if (sealed_psk_file) {
-				rc = gxfp_read_file_all(sealed_psk_file, &sealed, &sealed_len);
-				if (rc < 0) {
-					fprintf(stderr, "read sealed-psk failed: %s\n", strerror(-rc));
-					free(psk);
-					free(seed8);
-					free(wb);
-					return 1;
-				}
-			} else {
-				sealed = psk;
-				sealed_len = psk_len;
-			}
-
-			rc = gxfp_payload_build_bb010002(sealed,
-							 sealed_len,
+			rc = gxfp_payload_build_bb010002(NULL,
+							 0,
 							 seed8,
 							 wb,
 							 wb_len,
@@ -249,8 +240,7 @@ int main(int argc, char **argv)
 
 		if (rc < 0) {
 			fprintf(stderr, "build bb010002 failed: %s\n", strerror(-rc));
-			if (sealed && sealed != psk)
-				free(sealed);
+			free(sealed);
 			free(psk);
 			free(seed8);
 			free(wb);
@@ -258,13 +248,12 @@ int main(int argc, char **argv)
 			return 1;
 		}
 
-		f = fopen(build_bb010002 ? build_bb010002 : build_bb010002_raw, "wb");
+		f = fopen(build_bb010002, "wb");
 		if (!f || fwrite(bb, 1, bb_len, f) != bb_len) {
 			if (f)
 				fclose(f);
 			fprintf(stderr, "write bb010002 output failed\n");
-			if (sealed && sealed != psk)
-				free(sealed);
+			free(sealed);
 			free(psk);
 			free(seed8);
 			free(wb);
@@ -274,7 +263,7 @@ int main(int argc, char **argv)
 		fclose(f);
 
 		fprintf(stderr, "built bb010002 -> %s (len=%zu)\n",
-			build_bb010002 ? build_bb010002 : build_bb010002_raw,
+			build_bb010002,
 			bb_len);
 
 		if (out_psk_raw32) {
@@ -283,8 +272,7 @@ int main(int argc, char **argv)
 				if (psk_out)
 					fclose(psk_out);
 				fprintf(stderr, "write psk raw output failed\n");
-				if (sealed && sealed != psk)
-					free(sealed);
+				free(sealed);
 				free(psk);
 				free(seed8);
 				free(wb);
@@ -294,8 +282,7 @@ int main(int argc, char **argv)
 			fclose(psk_out);
 		}
 
-		if (sealed && sealed != psk)
-			free(sealed);
+		free(sealed);
 		free(psk);
 		free(seed8);
 		free(wb);

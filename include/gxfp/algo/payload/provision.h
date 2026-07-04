@@ -36,13 +36,6 @@ int gxfp_payload_build_bb010002(const uint8_t *sealed_psk,
                                 uint8_t **out_blob,
                                 size_t *out_blob_len);
 
-int gxfp_payload_build_bb010002_raw_psk(const uint8_t seed8[8],
-                                        const uint8_t *bb010003_wb_data,
-                                        size_t bb010003_wb_data_len,
-                                        int pad4,
-                                        uint8_t **out_blob,
-                                        size_t *out_blob_len);
-
 #ifdef __cplusplus
 }
 #endif
