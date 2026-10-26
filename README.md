@@ -95,6 +95,12 @@ Diagnostic tool that captures a raw fingerprint image and saves it as a 16-bit P
 gxfp_capture --psk-raw32 /path/to/psk_raw32.bin
 ```
 
+`gxfp_capture --pov` requests the frames that the sensor MCU captured during boot.
+
+```bash
+gxfp_capture --psk-raw32 /path/to/psk_raw32.bin --pov
+```
+
 ## Disclaimer
 
 This project is experimental and not affiliated with or endorsed by Goodix or Huawei.

@@ -46,10 +46,21 @@ int gxfp_tls_service_feed_tap_record(struct gxfp_tls_service *svc,
 int gxfp_tls_service_step(struct gxfp_tls_service *svc);
 int gxfp_tls_service_request_capture(struct gxfp_tls_service *svc);
 
+int gxfp_tls_service_request_pov(struct gxfp_tls_service *svc);
+int gxfp_tls_service_pov_done(const struct gxfp_tls_service *svc);
+int gxfp_tls_service_pov_count(const struct gxfp_tls_service *svc);
+void gxfp_tls_service_clear_pov(struct gxfp_tls_service *svc);
+
 int gxfp_tls_service_get_raw_image(struct gxfp_tls_service *svc,
 				   uint8_t out_hdr[5],
 				   uint8_t **out_body,
 				   size_t *out_body_len);
+
+int gxfp_tls_service_get_pov_raw(struct gxfp_tls_service *svc,
+				 int index,
+				 uint8_t out_hdr[5],
+				 const uint8_t **out_body,
+				 size_t *out_body_len);
 
 const char *gxfp_tls_service_strerror(int err, char *buf, size_t buf_len);
 

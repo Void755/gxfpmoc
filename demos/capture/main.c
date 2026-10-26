@@ -165,17 +165,72 @@ static int save_image_outputs(const struct gxfp_decoded_image *img)
 	return 0;
 }
 
+static int run_pov_dump(struct gxfp_session *sess)
+{
+	int count;
+	int saved = 0;
+
+	if (!sess)
+		return 1;
+
+	count = gxfp_session_pov_count(sess);
+	if (count < 0) {
+		fprintf(stderr, "pov: count failed: %s\n", strerror(-count));
+		return 1;
+	}
+
+	fprintf(stderr, "pov: count=%d\n", count);
+
+	if (count == 0) {
+		fprintf(stderr, "pov: no frames (MCU has no valid boot capture)\n");
+		return 3;
+	}
+
+	for (int i = 0; i < count; i++) {
+		struct gxfp_decoded_image img;
+		char path[64];
+		int rc;
+
+		rc = gxfp_session_get_pov_image(sess, i, &img);
+		if (rc < 0) {
+			fprintf(stderr, "pov[%d]: decode failed: %s\n",
+				i, strerror(-rc));
+			continue;
+		}
+
+		int cols = img.cols;
+		int rows = img.rows;
+
+		snprintf(path, sizeof(path), "pov-%d.pgm", i);
+		rc = gxfp_write_pgm_u16(path, cols, rows, img.pixels, 4095);
+		gxfp_decoded_image_free(&img);
+		if (rc < 0) {
+			fprintf(stderr, "pov[%d]: save %s failed: %s\n",
+				i, path, strerror(-rc));
+			continue;
+		}
+
+		fprintf(stderr, "pov[%d]: saved %s (%dx%d)\n",
+			i, path, cols, rows);
+		saved++;
+	}
+
+	return saved > 0 ? 0 : 3;
+}
+
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"Usage: %s --psk-raw32 <path>\n"
+		"Usage: %s --psk-raw32 <path> [--pov [options]]\n"
 		"\n"
 		"Options:\n"
 		"  --psk-raw32 <path>   path to 32-byte raw PSK binary file (required)\n"
+		"  --pov                capture boot POV frames only\n"
 		"  -h, --help           show this help\n"
 		"\n"
 		"Output:\n"
-		"  finger.pgm           16-bit PGM fingerprint image\n",
+		"  finger.pgm           16-bit PGM fingerprint image\n"
+		"  pov-<n>.pgm          16-bit PGM POV image (POV mode)\n",
 		argv0);
 }
 
@@ -185,12 +240,18 @@ int main(int argc, char **argv)
 	uint8_t *psk_raw = NULL;
 	size_t psk_raw_len = 0;
 	uint32_t timeout_ms = 20000;
+	int pov_mode = 0;
 	struct gxfp_session sess;
 	struct gxfp_session_events ev;
 	int rc;
 
+	enum {
+		OPT_POV = 1000,
+	};
+
 	struct option long_opts[] = {
 		{"psk-raw32", required_argument, NULL, 'p'},
+		{"pov",        no_argument,       NULL, OPT_POV},
 		{"help",      no_argument,       NULL, 'h'},
 		{NULL, 0, NULL, 0}
 	};
@@ -200,6 +261,9 @@ int main(int argc, char **argv)
 		switch (opt) {
 		case 'p':
 			psk_raw32_file = optarg;
+			break;
+		case OPT_POV:
+			pov_mode = 1;
 			break;
 		case 'h':
 			usage(argv[0]);
@@ -240,7 +304,10 @@ int main(int argc, char **argv)
 
 
 	gxfp_session_events_clear(&ev);
-	rc = gxfp_session_activate(&sess, 1, &ev);
+	if (pov_mode)
+		rc = gxfp_session_activate_pov_only(&sess, 1, &ev);
+	else
+		rc = gxfp_session_activate(&sess, 1, &ev);
 	if (rc < 0 || handle_session_error(&ev) < 0) {
 		gxfp_session_dispose(&sess);
 		return 1;
@@ -252,6 +319,12 @@ int main(int argc, char **argv)
 		fprintf(stderr, "connect failed: %s\n", gxfp_tls_service_strerror(rc, tls_err, sizeof(tls_err)));
 		gxfp_session_dispose(&sess);
 		return 1;
+	}
+
+	if (pov_mode) {
+		rc = run_pov_dump(&sess);
+		gxfp_session_dispose(&sess);
+		return rc;
 	}
 
 	for (;;) {

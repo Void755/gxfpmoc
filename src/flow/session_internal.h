@@ -10,6 +10,7 @@ enum gxfp_session_mode {
     GXFP_MODE_CLOSED = 0,
     GXFP_MODE_READY,
     GXFP_MODE_ACTIVATING_TLS,
+    GXFP_MODE_ACTIVATING_POV,
     GXFP_MODE_ACTIVATING_WAIT_UP,
     GXFP_MODE_ACTIVATING_DARK_CAPTURE,
     GXFP_MODE_IDLE,
@@ -37,6 +38,11 @@ struct gxfp_session_impl {
 
     struct gxfp_decoded_image pending_img;
     int pending_img_ready;
+
+    int pov_collect;
+    int pov_only;
+    int pov_requested;
+    int pov_done;
 
     struct {
         uint16_t tcode;

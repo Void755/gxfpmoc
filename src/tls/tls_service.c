@@ -2,6 +2,7 @@
 
 #include "../tls/tls_engine.h"
 
+#include "gxfp/cmd/device_recovery_cmd.h"
 #include "gxfp/cmd/tls_cmd.h"
 #include "gxfp/algo/common.h"
 #include "gxfp/algo/image/plain.h"
@@ -12,6 +13,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define GXFP_POV_TIMEOUT_MS 3000u
+
 struct gxfp_tls_service_impl {
 	struct gxfp_dev *dev;
 	struct gxfp_tls_hs_cfg cfg;
@@ -19,11 +22,15 @@ struct gxfp_tls_service_impl {
 	int err;
 	int pending_capture;
 	int capture_sent;
+	int pov_pending;
+	int pov_sent;
+	int pov_done;
 	int64_t handshake_start_ms;
 	int64_t last_plain_ms;
 	int64_t last_tls_rx_ms;
+	int64_t pov_deadline_ms;
 	struct gxfp_tls_engine *engine;
-	struct gxfp_plain_image_sink img;
+	struct gxfp_plain_sink plain;
 };
 
 static void svc_mark_capture_started(struct gxfp_tls_service_impl *s)
@@ -51,12 +58,39 @@ static int svc_capture_timed_out(struct gxfp_tls_service_impl *s)
 	       (uint32_t)(now - s->last_tls_rx_ms) > s->cfg.timeout_ms;
 }
 
+static int svc_pull_plain(struct gxfp_tls_service_impl *s)
+{
+	int progressed = 0;
+
+	for (;;) {
+		uint8_t plain[TLS_REC_MAX_PLAIN];
+		size_t plain_len = 0;
+		int r;
+
+		r = gxfp_tls_engine_pull_plain(s->engine, plain, sizeof(plain),
+					       &plain_len);
+		if (r == 1) {
+			int64_t now = gxfp_monotonic_ms();
+
+			gxfp_plain_scan_chunks(plain, plain_len, &s->plain);
+			s->last_plain_ms = now;
+			progressed = 1;
+			continue;
+		}
+		if (r == -EAGAIN)
+			return progressed;
+		if (r == 0)
+			return -EPIPE;
+		return r;
+	}
+}
+
 static void svc_impl_free(struct gxfp_tls_service_impl *s)
 {
 	if (!s)
 		return;
 	gxfp_tls_engine_free(s->engine);
-	gxfp_plain_image_sink_reset(&s->img);
+	gxfp_plain_sink_reset(&s->plain);
 	free(s);
 }
 
@@ -95,7 +129,7 @@ int gxfp_tls_service_init(struct gxfp_tls_service *svc,
 	if (cfg)
 		s->cfg = *cfg;
 
-	gxfp_plain_image_sink_reset(&s->img);
+	gxfp_plain_sink_reset(&s->plain);
 
 	r = gxfp_tls_engine_create(&s->engine,
 				   psk,
@@ -175,16 +209,69 @@ int gxfp_tls_service_request_capture(struct gxfp_tls_service *svc)
 
 	s->pending_capture = 1;
 	s->capture_sent = 0;
-	gxfp_plain_image_sink_reset(&s->img);
+	gxfp_plain_sink_reset_normal(&s->plain);
 	s->state = GXFP_TLS_HS_CONNECTED;
 	return 0;
+}
+
+int gxfp_tls_service_request_pov(struct gxfp_tls_service *svc)
+{
+	struct gxfp_tls_service_impl *s;
+
+	if (!svc || !svc->impl)
+		return -EINVAL;
+	s = (struct gxfp_tls_service_impl *)svc->impl;
+
+	if (s->state != GXFP_TLS_HS_CONNECTED && s->state != GXFP_TLS_HS_DONE)
+		return -EBUSY;
+
+	gxfp_plain_sink_reset_pov(&s->plain);
+	s->pov_pending = 1;
+	s->pov_sent = 0;
+	s->pov_done = 0;
+	s->pov_deadline_ms = 0;
+	return 0;
+}
+
+int gxfp_tls_service_pov_done(const struct gxfp_tls_service *svc)
+{
+	const struct gxfp_tls_service_impl *s;
+
+	if (!svc || !svc->impl)
+		return 0;
+	s = (const struct gxfp_tls_service_impl *)svc->impl;
+	return s->pov_done;
+}
+
+int gxfp_tls_service_pov_count(const struct gxfp_tls_service *svc)
+{
+	const struct gxfp_tls_service_impl *s;
+
+	if (!svc || !svc->impl)
+		return -EINVAL;
+	s = (const struct gxfp_tls_service_impl *)svc->impl;
+	return s->plain.pov_count;
+}
+
+void gxfp_tls_service_clear_pov(struct gxfp_tls_service *svc)
+{
+	struct gxfp_tls_service_impl *s;
+
+	if (!svc || !svc->impl)
+		return;
+	s = (struct gxfp_tls_service_impl *)svc->impl;
+
+	gxfp_plain_sink_reset_pov(&s->plain);
+	s->pov_pending = 0;
+	s->pov_sent = 0;
+	s->pov_done = 0;
+	s->pov_deadline_ms = 0;
 }
 
 int gxfp_tls_service_step(struct gxfp_tls_service *svc)
 {
 	struct gxfp_tls_service_impl *s;
 	int r;
-	int progressed = 0;
 
 	if (!svc || !svc->impl)
 		return -EINVAL;
@@ -212,6 +299,49 @@ int gxfp_tls_service_step(struct gxfp_tls_service *svc)
 		return r;
 	}
 
+	if ((s->state == GXFP_TLS_HS_CONNECTED ||
+	     s->state == GXFP_TLS_HS_DONE) && s->pov_pending) {
+		int64_t now;
+
+		if (!s->pov_sent) {
+			r = gxfp_cmd_sleep_cleanup(s->dev);
+			if (r < 0) {
+				s->err = r;
+				s->state = GXFP_TLS_HS_ERROR;
+				return r;
+			}
+			if (s->cfg.logf)
+				fprintf(s->cfg.logf,
+					"pov: sleep-cleanup sent (cmd 0x%02x)\n",
+					GXFP_CMD_SLEEP_CLEANUP);
+			s->pov_sent = 1;
+			s->pov_deadline_ms = gxfp_monotonic_ms() +
+					     (int64_t)GXFP_POV_TIMEOUT_MS;
+		}
+
+		r = svc_pull_plain(s);
+		if (r < 0) {
+			s->err = r;
+			s->state = GXFP_TLS_HS_ERROR;
+			return r;
+		}
+
+		now = gxfp_monotonic_ms();
+		if (s->plain.pov_count >= GXFP_PLAIN_MAX_POV_FRAMES ||
+		    now >= s->pov_deadline_ms) {
+			if (s->cfg.logf)
+				fprintf(s->cfg.logf,
+					"pov: done count=%d crc_fail=%d\n",
+					s->plain.pov_count,
+					s->plain.pov_crc_fail);
+			s->pov_pending = 0;
+			s->pov_done = 1;
+			return 0;
+		}
+
+		return -EAGAIN;
+	}
+
 	if (s->state == GXFP_TLS_HS_CONNECTED && s->pending_capture && !s->capture_sent) {
 		r = gxfp_cmd_get_image(s->dev);
 		if (r < 0) {
@@ -223,35 +353,25 @@ int gxfp_tls_service_step(struct gxfp_tls_service *svc)
 	}
 
 	if (s->state == GXFP_TLS_HS_CAPTURING) {
-		for (;;) {
-			uint8_t plain[TLS_REC_MAX_PLAIN];
-			size_t plain_len = 0;
-			r = gxfp_tls_engine_pull_plain(s->engine, plain, sizeof(plain), &plain_len);
-			if (r == 1) {
-				gxfp_plain_scan_for_nonpov_image_chunks(plain, plain_len, &s->img);
-				s->last_plain_ms = gxfp_monotonic_ms();
-				progressed = 1;
-				if (s->img.have_oneframe) {
-					s->state = GXFP_TLS_HS_DONE;
-					return 1;
-				}
-				continue;
-			}
-			if (r == -EAGAIN)
-				break;
+		r = svc_pull_plain(s);
+		if (r < 0) {
 			s->err = r;
 			s->state = GXFP_TLS_HS_ERROR;
 			return r;
 		}
 
-		if (!progressed) {
-			if (svc_capture_timed_out(s)) {
-				s->err = -ETIMEDOUT;
-				s->state = GXFP_TLS_HS_ERROR;
-				return s->err;
-			}
+		if (s->plain.have_normal) {
+			s->state = GXFP_TLS_HS_DONE;
+			return 1;
 		}
-		return progressed ? 0 : -EAGAIN;
+
+		if (r == 0 && svc_capture_timed_out(s)) {
+			s->err = -ETIMEDOUT;
+			s->state = GXFP_TLS_HS_ERROR;
+			return s->err;
+		}
+
+		return r ? 0 : -EAGAIN;
 	}
 
 	if (s->state == GXFP_TLS_HS_DONE)
@@ -266,17 +386,38 @@ int gxfp_tls_service_get_raw_image(struct gxfp_tls_service *svc,
 				   size_t *out_body_len)
 {
 	struct gxfp_tls_service_impl *s;
+
 	if (!svc || !svc->impl)
 		return -EINVAL;
 	s = (struct gxfp_tls_service_impl *)svc->impl;
 	if (!out_hdr || !out_body || !out_body_len)
 		return -EINVAL;
-	if (!s->img.have_oneframe)
+	if (!s->plain.have_normal)
 		return 0;
-	return gxfp_plain_image_sink_extract(&s->img,
-							out_hdr,
-							out_body,
-							out_body_len);
+	return gxfp_plain_sink_extract_normal(&s->plain,
+					      out_hdr,
+					      out_body,
+					      out_body_len);
+}
+
+int gxfp_tls_service_get_pov_raw(struct gxfp_tls_service *svc,
+				 int index,
+				 uint8_t out_hdr[5],
+				 const uint8_t **out_body,
+				 size_t *out_body_len)
+{
+	struct gxfp_tls_service_impl *s;
+
+	if (!svc || !svc->impl)
+		return -EINVAL;
+	s = (struct gxfp_tls_service_impl *)svc->impl;
+	if (!out_body || !out_body_len)
+		return -EINVAL;
+	return gxfp_plain_sink_get_pov(&s->plain,
+				       index,
+				       out_hdr,
+				       out_body,
+				       out_body_len);
 }
 
 enum gxfp_tls_hs_state gxfp_tls_service_state(const struct gxfp_tls_service *svc)

@@ -130,7 +130,7 @@ session_set_error(struct gxfp_session *s,
     vsnprintf(ev->error_msg, sizeof(ev->error_msg), fmt, ap);
     va_end(ap);
 
-    if (s && s->impl && err != -ECANCELED &&
+    if (s && s->impl && err != -ECANCELED && !SESSION(s)->pov_only &&
         (target == GXFP_SESSION_ERR_TARGET_GENERIC || target == GXFP_SESSION_ERR_TARGET_ACTIVATE) &&
         gxfp_session_mode_has_io(s)) {
         (void)gxfp_device_recovery(&SESSION(s)->dev, 1, 1, 0);
@@ -187,6 +187,10 @@ gxfp_session_reset_runtime(struct gxfp_session *s)
     SESSION(s)->otp_ctx.tcode = 0;
     SESSION(s)->otp_ctx.fdt_delta = 0;
     SESSION(s)->otp_ctx.has_tcode_delta = 0;
+    SESSION(s)->pov_collect = 0;
+    SESSION(s)->pov_only = 0;
+    SESSION(s)->pov_requested = 0;
+    SESSION(s)->pov_done = 0;
     session_apply_fdt_runtime_from_otp(s);
 
     free(SESSION(s)->psk);
@@ -483,15 +487,34 @@ gxfp_session_request_deactivate(struct gxfp_session *s,
     session_begin_cleanup(s, GXFP_CLEANUP_DEACTIVATE, 0, ev);
 }
 
-int
-gxfp_session_activate(struct gxfp_session *s,
-                      int enable_log,
-                      struct gxfp_session_events *ev)
+static void
+session_start_wait_up(struct gxfp_session *s, struct gxfp_session_events *ev)
+{
+    session_set_fdt_mode(s, ev, GXFP_FDT_MODE_WAIT_UP);
+    if (ev->session_error)
+        return;
+
+    SESSION(s)->mode = GXFP_MODE_ACTIVATING_WAIT_UP;
+    ev->request_tick = 1;
+    ev->tick_delay_ms = 0;
+}
+
+static int
+session_activate(struct gxfp_session *s,
+                 int enable_log,
+                 int collect_pov,
+                 int pov_only,
+                 struct gxfp_session_events *ev)
 {
     if (!s || !s->impl || !ev)
         return -EINVAL;
     if (!gxfp_session_mode_has_io(s))
         return -EINVAL;
+
+    SESSION(s)->pov_collect = collect_pov;
+    SESSION(s)->pov_only = pov_only;
+    SESSION(s)->pov_requested = 0;
+    SESSION(s)->pov_done = 0;
 
     if (SESSION(s)->mode == GXFP_MODE_FAILED)
         SESSION(s)->mode = GXFP_MODE_READY;
@@ -509,25 +532,73 @@ gxfp_session_activate(struct gxfp_session *s,
     return 0;
 }
 
+int
+gxfp_session_activate(struct gxfp_session *s,
+                      int enable_log,
+                      struct gxfp_session_events *ev)
+{
+    return session_activate(s, enable_log, 0, 0, ev);
+}
+
+int
+gxfp_session_activate_pov_only(struct gxfp_session *s,
+                               int enable_log,
+                               struct gxfp_session_events *ev)
+{
+    return session_activate(s, enable_log, 1, 1, ev);
+}
+
 static void
 session_maybe_finish_activation(struct gxfp_session *s, struct gxfp_session_events *ev)
 {
     enum gxfp_tls_hs_state st;
+    int r;
 
-    if (!s || !s->impl || SESSION(s)->mode != GXFP_MODE_ACTIVATING_TLS)
+    if (!s || !s->impl)
         return;
 
     st = gxfp_tls_service_state(&SESSION(s)->svc);
-    if (st != GXFP_TLS_HS_CONNECTED && st != GXFP_TLS_HS_DONE)
-        return;
 
-    session_set_fdt_mode(s, ev, GXFP_FDT_MODE_WAIT_UP);
-    if (ev->session_error)
-        return;
+    if (SESSION(s)->mode == GXFP_MODE_ACTIVATING_TLS) {
+        if (st != GXFP_TLS_HS_CONNECTED && st != GXFP_TLS_HS_DONE)
+            return;
 
-    SESSION(s)->mode = GXFP_MODE_ACTIVATING_WAIT_UP;
-    ev->request_tick = 1;
-    ev->tick_delay_ms = 0;
+        if (SESSION(s)->pov_collect && !SESSION(s)->pov_requested) {
+            r = gxfp_tls_service_request_pov(&SESSION(s)->svc);
+            if (r < 0) {
+                session_set_error(s,
+                                  ev,
+                                  r,
+                                  GXFP_SESSION_ERR_TARGET_ACTIVATE,
+                                  "pov request failed: %s",
+                                  strerror(-r));
+                return;
+            }
+
+            SESSION(s)->pov_requested = 1;
+            SESSION(s)->mode = GXFP_MODE_ACTIVATING_POV;
+            ev->request_tick = 1;
+            ev->tick_delay_ms = 0;
+            return;
+        }
+
+        session_start_wait_up(s, ev);
+        return;
+    }
+
+    if (SESSION(s)->mode == GXFP_MODE_ACTIVATING_POV) {
+        if (!gxfp_tls_service_pov_done(&SESSION(s)->svc))
+            return;
+
+        SESSION(s)->pov_done = 1;
+        if (SESSION(s)->pov_only) {
+            SESSION(s)->mode = GXFP_MODE_IDLE;
+            ev->activate_complete = 1;
+            return;
+        }
+
+        session_start_wait_up(s, ev);
+    }
 }
 
 static void
@@ -642,6 +713,7 @@ gxfp_session_pump(struct gxfp_session *s,
         return;
 
     if (action_cancelled && (SESSION(s)->mode == GXFP_MODE_ACTIVATING_TLS ||
+                             SESSION(s)->mode == GXFP_MODE_ACTIVATING_POV ||
                              SESSION(s)->mode == GXFP_MODE_ACTIVATING_WAIT_UP ||
                              SESSION(s)->mode == GXFP_MODE_ACTIVATING_DARK_CAPTURE ||
                              SESSION(s)->mode == GXFP_MODE_CAPTURING)) {
@@ -669,6 +741,11 @@ gxfp_session_pump(struct gxfp_session *s,
 
     st = gxfp_tls_service_state(&SESSION(s)->svc);
     if (SESSION(s)->mode == GXFP_MODE_ACTIVATING_TLS && st != GXFP_TLS_HS_CONNECTED && st != GXFP_TLS_HS_ERROR) {
+        ev->request_tick = 1;
+        ev->tick_delay_ms = 20;
+    }
+    if (SESSION(s)->mode == GXFP_MODE_ACTIVATING_POV &&
+        !gxfp_tls_service_pov_done(&SESSION(s)->svc)) {
         ev->request_tick = 1;
         ev->tick_delay_ms = 20;
     }
@@ -834,6 +911,50 @@ gxfp_session_change_state(struct gxfp_session *s,
         session_set_fdt_mode(s, ev, GXFP_FDT_MODE_IDLE);
         break;
     }
+}
+
+int
+gxfp_session_pov_count(const struct gxfp_session *s)
+{
+    if (!s || !s->impl)
+        return -EINVAL;
+    if (!SESSION(s)->svc.impl)
+        return 0;
+    return gxfp_tls_service_pov_count(&SESSION(s)->svc);
+}
+
+int
+gxfp_session_get_pov_image(struct gxfp_session *s,
+                           int index,
+                           struct gxfp_decoded_image *out)
+{
+    const uint8_t *body = NULL;
+    size_t body_len = 0;
+    int r;
+
+    if (!s || !s->impl || !out)
+        return -EINVAL;
+    if (!SESSION(s)->svc.impl)
+        return -ENOENT;
+
+    r = gxfp_tls_service_get_pov_raw(&SESSION(s)->svc,
+                                     index,
+                                     NULL,
+                                     &body,
+                                     &body_len);
+    if (r <= 0)
+        return r < 0 ? r : -ENOENT;
+
+    memset(out, 0, sizeof(*out));
+    return gxfp_decode_image(body, body_len, GXFP_DECODE_AUTO, out);
+}
+
+void
+gxfp_session_clear_pov(struct gxfp_session *s)
+{
+    if (!s || !s->impl || !SESSION(s)->svc.impl)
+        return;
+    gxfp_tls_service_clear_pov(&SESSION(s)->svc);
 }
 
 int

@@ -39,7 +39,7 @@ gxfp_device_recovery(struct gxfp_dev *dev,
 		(void)rr;
 	}
 
-	rr = gxfp_cmd_set_sleep_mode(dev);
+	rr = gxfp_cmd_sleep_cleanup(dev);
 	(void)rr;
 
 	if (reset_flag != 0) {

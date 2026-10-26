@@ -76,6 +76,16 @@ int gxfp_session_activate(struct gxfp_session *s,
                           int enable_log,
                           struct gxfp_session_events *ev);
 
+int gxfp_session_activate_pov_only(struct gxfp_session *s,
+                                   int enable_log,
+                                   struct gxfp_session_events *ev);
+
+int gxfp_session_pov_count(const struct gxfp_session *s);
+int gxfp_session_get_pov_image(struct gxfp_session *s,
+                               int index,
+                               struct gxfp_decoded_image *out);
+void gxfp_session_clear_pov(struct gxfp_session *s);
+
 void gxfp_session_change_state(struct gxfp_session *s,
                                enum gxfp_session_state state,
                                struct gxfp_session_events *ev);

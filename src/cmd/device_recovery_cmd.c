@@ -76,7 +76,7 @@ int gxfp_cmd_send_nop(struct gxfp_dev *dev)
                                     GXFP_RECOVERY_CMD_TIMEOUT_MS);
 }
 
-int gxfp_cmd_set_sleep_mode(struct gxfp_dev *dev)
+int gxfp_cmd_sleep_cleanup(struct gxfp_dev *dev)
 {
     uint8_t payload[2] = { 0x00, 0x00 };
 
@@ -84,7 +84,7 @@ int gxfp_cmd_set_sleep_mode(struct gxfp_dev *dev)
         return -EINVAL;
 
     return gxfp_cmd_send_expect_ack(dev,
-                                    GXFP_CMD_SET_SLEEP_MODE,
+                                    GXFP_CMD_SLEEP_CLEANUP,
                                     payload,
                                     (uint16_t)sizeof(payload),
                                     1,

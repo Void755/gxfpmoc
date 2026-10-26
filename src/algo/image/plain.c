@@ -55,80 +55,173 @@ static int gxfp_image_crc_check(const uint8_t *buf, size_t len)
 	return (crc == expected) ? 1 : 0;
 }
 
-int gxfp_plain_image_sink_append(struct gxfp_plain_image_sink *s, const uint8_t *p, size_t n)
+static void plain_frame_reset(struct gxfp_plain_frame *f)
 {
-	if (!s || !p || n == 0)
-		return 0;
-	if (s->have_oneframe)
-		return 0;
-	if (n < 5)
-		return 0;
+	if (!f)
+		return;
 
-	const uint8_t *hdr = p;
-	const uint8_t *body = p + 5;
-	size_t body_len = n - 5;
+	if (f->body && f->body_len)
+		memset(f->body, 0, f->body_len);
+	free(f->body);
+	memset(f, 0, sizeof(*f));
+}
+
+static int plain_frame_store(struct gxfp_plain_frame *f,
+			     const uint8_t *payload,
+			     size_t payload_len,
+			     size_t body_len)
+{
+	uint8_t *buf;
+
+	if (!f || !payload)
+		return -EINVAL;
+	if (payload_len < 5 || body_len == 0)
+		return 0;
+	if (body_len > payload_len - 5)
+		return -EINVAL;
+
+	const uint8_t *body = payload + 5;
 
 	if (!gxfp_image_crc_check(body, body_len))
 		return 0;
 
-	uint8_t *buf = (uint8_t *)malloc(body_len);
+	buf = (uint8_t *)malloc(body_len);
 	if (!buf)
 		return -ENOMEM;
+
 	memcpy(buf, body, body_len);
-	memcpy(s->hdr, hdr, 5);
-	s->body = buf;
-	s->body_len = body_len;
-	s->have_oneframe = 1;
-	return 0;
+	memcpy(f->hdr, payload, 5);
+	f->body = buf;
+	f->body_len = body_len;
+	return 1;
 }
 
-void gxfp_plain_image_sink_reset(struct gxfp_plain_image_sink *s)
+void gxfp_plain_sink_reset_normal(struct gxfp_plain_sink *s)
 {
 	if (!s)
 		return;
-	if (s->body && s->body_len)
-		memset(s->body, 0, s->body_len);
-	free(s->body);
-	memset(s->hdr, 0, sizeof(s->hdr));
-	s->body = NULL;
-	s->body_len = 0;
-	s->have_oneframe = 0;
+
+	plain_frame_reset(&s->normal);
+	s->have_normal = 0;
 }
 
-int gxfp_plain_image_sink_extract(struct gxfp_plain_image_sink *s,
-					     uint8_t out_hdr[5],
-					     uint8_t **out_body, size_t *out_body_len)
+void gxfp_plain_sink_reset_pov(struct gxfp_plain_sink *s)
 {
+	if (!s)
+		return;
+
+	for (int i = 0; i < GXFP_PLAIN_MAX_POV_FRAMES; i++)
+		plain_frame_reset(&s->pov[i]);
+
+	s->pov_count = 0;
+	s->pov_crc_fail = 0;
+}
+
+void gxfp_plain_sink_reset(struct gxfp_plain_sink *s)
+{
+	if (!s)
+		return;
+
+	gxfp_plain_sink_reset_normal(s);
+	gxfp_plain_sink_reset_pov(s);
+}
+
+int gxfp_plain_sink_append_normal(struct gxfp_plain_sink *s,
+				  const uint8_t *payload,
+				  size_t payload_len)
+{
+	int r;
+
+	if (!s || !payload || payload_len < 5)
+		return 0;
+	if (s->have_normal)
+		return 0;
+
+	r = plain_frame_store(&s->normal, payload, payload_len,
+			      payload_len - 5);
+	if (r == 1)
+		s->have_normal = 1;
+	return r;
+}
+
+int gxfp_plain_sink_append_pov(struct gxfp_plain_sink *s,
+			       const uint8_t *payload,
+			       size_t payload_len)
+{
+	int r;
+
+	if (!s || !payload || payload_len < 5)
+		return 0;
+	if (s->pov_count >= GXFP_PLAIN_MAX_POV_FRAMES)
+		return 0;
+
+	r = plain_frame_store(&s->pov[s->pov_count], payload, payload_len,
+			      payload_len - 5);
+	if (r == 1)
+		s->pov_count++;
+	else if (r == 0)
+		s->pov_crc_fail++;
+	return r;
+}
+
+int gxfp_plain_sink_extract_normal(struct gxfp_plain_sink *s,
+				   uint8_t out_hdr[5],
+				   uint8_t **out_body,
+				   size_t *out_body_len)
+{
+	uint8_t *copy;
+	size_t len;
+
 	if (!s || !out_body || !out_body_len)
 		return -EINVAL;
+
 	*out_body = NULL;
 	*out_body_len = 0;
 	if (out_hdr)
 		memset(out_hdr, 0, 5);
 
-	if (!s->have_oneframe || !s->body || s->body_len == 0)
+	if (!s->have_normal || !s->normal.body || s->normal.body_len == 0)
 		return 0;
 
-	size_t len = s->body_len;
-	uint8_t *copy = (uint8_t *)malloc(len);
+	len = s->normal.body_len;
+	copy = (uint8_t *)malloc(len);
 	if (!copy)
 		return -ENOMEM;
-	memcpy(copy, s->body, len);
+	memcpy(copy, s->normal.body, len);
 	if (out_hdr)
-		memcpy(out_hdr, s->hdr, 5);
+		memcpy(out_hdr, s->normal.hdr, 5);
 
-	memset(s->body, 0, len);
-	free(s->body);
-	s->body = NULL;
-	s->body_len = 0;
-	s->have_oneframe = 0;
+	plain_frame_reset(&s->normal);
+	s->have_normal = 0;
 
 	*out_body = copy;
 	*out_body_len = len;
 	return 1;
 }
 
-void gxfp_plain_scan_for_nonpov_image_chunks(const uint8_t *buf, size_t len, struct gxfp_plain_image_sink *sink)
+int gxfp_plain_sink_get_pov(const struct gxfp_plain_sink *s,
+			    int index,
+			    uint8_t out_hdr[5],
+			    const uint8_t **out_body,
+			    size_t *out_body_len)
+{
+	if (!s || !out_body || !out_body_len)
+		return -EINVAL;
+	if (index < 0 || index >= s->pov_count)
+		return -ENOENT;
+
+	const struct gxfp_plain_frame *f = &s->pov[index];
+
+	*out_body = f->body;
+	*out_body_len = f->body_len;
+	if (out_hdr)
+		memcpy(out_hdr, f->hdr, 5);
+	return 1;
+}
+
+void gxfp_plain_scan_chunks(const uint8_t *buf,
+			    size_t len,
+			    struct gxfp_plain_sink *sink)
 {
 	size_t off;
 
@@ -139,6 +232,7 @@ void gxfp_plain_scan_for_nonpov_image_chunks(const uint8_t *buf, size_t len, str
 		struct gxfp_frame_parsed frame;
 		size_t total;
 		uint8_t cmd0;
+		uint8_t cmd1;
 
 		if (!gxfp_parse_goodix_body(buf + off, len - off, &frame) || !frame.valid)
 			continue;
@@ -146,9 +240,20 @@ void gxfp_plain_scan_for_nonpov_image_chunks(const uint8_t *buf, size_t len, str
 		total = (size_t)frame.payload_len + 4u;
 
 		cmd0 = (uint8_t)((frame.cmd >> 4) & 0x0F);
-		if (cmd0 == 2) {
-			if (frame.payload_len >= 5 && frame.payload[0] != 0xAA)
-				(void)gxfp_plain_image_sink_append(sink, frame.payload, frame.payload_len);
+		cmd1 = (uint8_t)((frame.cmd & 0x0F) >> 1);
+
+		if (cmd0 == 0x2 &&
+		    frame.payload_len >= 5 &&
+		    frame.payload[0] != 0xAA) {
+			(void)gxfp_plain_sink_append_normal(sink,
+							    frame.payload,
+							    frame.payload_len);
+		} else if (cmd0 == 0xD && cmd1 == 0x1 &&
+			   frame.payload_len >= 5 &&
+			   frame.payload[0] == 0xAA) {
+			(void)gxfp_plain_sink_append_pov(sink,
+							 frame.payload,
+							 frame.payload_len);
 		}
 
 		if (total > 0 && off + total <= len)

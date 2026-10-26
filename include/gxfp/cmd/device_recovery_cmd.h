@@ -12,7 +12,7 @@ int gxfp_cmd_notify_power_state(struct gxfp_dev *dev);
 
 int gxfp_cmd_send_nop(struct gxfp_dev *dev);
 
-int gxfp_cmd_set_sleep_mode(struct gxfp_dev *dev);
+int gxfp_cmd_sleep_cleanup(struct gxfp_dev *dev);
 
 int gxfp_cmd_reset_device(struct gxfp_dev *dev, uint8_t reset_flag);
 
