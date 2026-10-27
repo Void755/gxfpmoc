@@ -4,3 +4,10 @@ build/
 out/
 *.bin
 *.pgm
+build*/
+libfprint/build*/
+.nix-pkgconfig/
+
+# Nix build results
+/result
+/result-*

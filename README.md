@@ -9,8 +9,8 @@ The project consists of three components:
 | Component | Description |
 |---|---|
 | `kernel/` | Kernel EC mailbox resource broker, exposing opaque `/dev/gxfp` write/read/poll transport |
-| gxfpmoc (this repo) | Userspace driver library managing TLS sessions, sensor configuration, and image capture. Includes diagnostic and provisioning tools |
-| [libfprint](https://github.com/Void755/libfprint) | Fork of [libfprint](https://github.com/goodix-fp-linux-dev/libfprint) with SIGFM matching algorithm |
+| `src/`, `include/`, `demos/` | Userspace driver library managing TLS sessions, sensor configuration, and image capture. Includes diagnostic and provisioning tools |
+| `libfprint/` | [libfprint](https://github.com/goodix-fp-linux-dev/libfprint) fork with SIGFM matching and the GXFP driver |
 
 ## Installation (NixOS)
 
@@ -21,21 +21,19 @@ Add to your `flake.nix`:
 ```nix
 {
   inputs = {
-    fprintd.url = "git+https://github.com/Void755/libfprint?ref=sigfm&submodules=1";
-    gxfp-linux-driver.url = "github:Void755/gxfp_linux_driver";
+    gxfpmoc.url = "github:Void755/gxfpmoc";
   };
 
-  outputs = { self, nixpkgs, fprintd, gxfp-linux-driver, ... }: {
+  outputs = { self, nixpkgs, gxfpmoc, ... }: {
     nixosConfigurations.your-host = nixpkgs.lib.nixosSystem {
       modules = [
-        fprintd.nixosModules.default
-        gxfp-linux-driver.nixosModules.default
+        gxfpmoc.nixosModules.default
         {
           hardware.gxfp.enable = true;
         }
         ({ pkgs, ... }: {
           nixpkgs.overlays = [
-            fprintd.overlays.default
+            gxfpmoc.overlays.default
           ];
           environment.systemPackages = with pkgs; [ gxfp-tools ];
         })
@@ -78,7 +76,7 @@ The sensor is identified via ACPI as `GXFP5130` and connects over eSPI (not the 
 Nix development shell:
 
 ```bash
-nix develop -f shell.nix
+nix develop
 ```
 
 ## Tools
