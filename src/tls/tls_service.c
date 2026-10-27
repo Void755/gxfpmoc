@@ -139,7 +139,6 @@ int gxfp_tls_service_init(struct gxfp_tls_service *svc,
 	if (r < 0)
 		goto fail;
 
-	(void)gxfp_dev_set_nonblock(dev, 1);
 	(void)gxfp_dev_flush_rxq(dev);
 
 	r = gxfp_cmd_tls_server_init(s->dev);

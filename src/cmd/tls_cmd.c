@@ -3,6 +3,7 @@
 #include "gxfp/cmd/goodix_xfer.h"
 #include "gxfp/proto/goodix_cmd.h"
 #include "gxfp/proto/goodix_proto.h"
+#include "gxfp/proto/mp_proto.h"
 
 #include <errno.h>
 
@@ -13,7 +14,7 @@ gxfp_tls_cmd_send_expect_ack(struct gxfp_dev *dev,
                              uint16_t payload_len,
                              int timeout_ms)
 {
-    uint8_t rx[GXFP_IOCTL_TAP_PAYLOAD_MAX];
+    uint8_t rx[GXFP_MP_FRAME_MAX];
     uint32_t rx_len = 0;
     struct gxfp_frame_parsed frame;
     int rc;

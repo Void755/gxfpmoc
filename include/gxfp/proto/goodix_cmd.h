@@ -4,6 +4,7 @@
 #define GXFP_CMD_NOTIFY_POWER_STATE  0x0E
 #define GXFP_CMD_RESET_DEVICE        0xA1
 #define GXFP_CMD_READ_OTP            0xA6
+#define GXFP_CMD_FIRMWARE_VERSION    0xA8
 
 #define GXFP_CMD_FDT_DOWN            0x32
 #define GXFP_CMD_FDT_UP              0x34

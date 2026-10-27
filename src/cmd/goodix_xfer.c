@@ -2,6 +2,7 @@
 
 #include "gxfp/proto/goodix_proto.h"
 #include "gxfp/proto/goodix_constants.h"
+#include "gxfp/proto/mp_proto.h"
 #include "gxfp/algo/common.h"
 
 #include <errno.h>
@@ -37,7 +38,7 @@ int gxfp_goodix_wait_selected(struct gxfp_dev *dev,
 				 gxfp_goodix_frame_selector_fn selector,
 				 void *selector_ctx)
 {
-	uint8_t tap_buf[sizeof(struct gxfp_tap_hdr) + (size_t)GXFP_IOCTL_TAP_PAYLOAD_MAX];
+	uint8_t tap_buf[sizeof(struct gxfp_tap_hdr) + (size_t)GXFP_MP_FRAME_MAX];
 	int64_t deadline;
 	int r;
 	gxfp_goodix_frame_selector_fn fn = selector ? selector : select_any_frame;

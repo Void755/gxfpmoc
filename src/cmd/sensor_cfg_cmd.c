@@ -3,6 +3,7 @@
 #include "gxfp/cmd/goodix_xfer.h"
 #include "gxfp/proto/goodix_cmd.h"
 #include "gxfp/proto/goodix_proto.h"
+#include "gxfp/proto/mp_proto.h"
 
 #include <errno.h>
 
@@ -12,7 +13,7 @@ int gxfp_cmd_read_otp(struct gxfp_dev *dev,
                       uint16_t *out_otp_len)
 {
     uint8_t req_payload[2] = { 0x00, 0x00 };
-    uint8_t rx[GXFP_IOCTL_TAP_PAYLOAD_MAX];
+    uint8_t rx[GXFP_MP_FRAME_MAX];
     uint32_t rx_len = 0;
     struct gxfp_frame_parsed frame;
     int rc;
@@ -58,7 +59,7 @@ int gxfp_cmd_upload_config_mcu(struct gxfp_dev *dev,
                                uint16_t cfg_len,
                                uint8_t *out_ack_status)
 {
-    uint8_t rx[GXFP_IOCTL_TAP_PAYLOAD_MAX];
+    uint8_t rx[GXFP_MP_FRAME_MAX];
     uint32_t rx_len = 0;
     struct gxfp_frame_parsed frame;
     int rc;

@@ -1,14 +1,14 @@
 # GXFP5130 Linux Fingerprint Sensor Driver
 
-An experimental Linux driver stack for the GXFP5130 fingerprint sensor connected via eSPI.
+An experimental Linux driver stack for the GXFP5130 fingerprint sensor connected through an ACPI-described EC mailbox.
 
 ## Overview
 
 The project consists of three components:
 
-| Repository | Description |
+| Component | Description |
 |---|---|
-| [gxfp_linux_driver](https://github.com/Void755/gxfp_linux_driver) | Kernel driver implementing the eSPI transport layer, exposing `/dev/gxfp` |
+| `kernel/` | Kernel EC mailbox resource broker, exposing opaque `/dev/gxfp` write/read/poll transport |
 | gxfpmoc (this repo) | Userspace driver library managing TLS sessions, sensor configuration, and image capture. Includes diagnostic and provisioning tools |
 | [libfprint](https://github.com/Void755/libfprint) | Fork of [libfprint](https://github.com/goodix-fp-linux-dev/libfprint) with SIGFM matching algorithm |
 

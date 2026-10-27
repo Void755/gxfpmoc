@@ -8,6 +8,7 @@
 #include "gxfp/flow/fdt.h"
 #include "gxfp/flow/device_recovery.h"
 #include "gxfp/io/dev.h"
+#include "gxfp/proto/mp_proto.h"
 #include "gxfp/tls/tls_service.h"
 
 #include "session_internal.h"
@@ -262,7 +263,7 @@ session_ensure_tap_io_buffer(struct gxfp_session *s)
     if (SESSION(s)->tap_io_buf)
         return 0;
 
-    cap = sizeof(struct gxfp_tap_hdr) + (size_t)GXFP_IOCTL_TAP_PAYLOAD_MAX;
+    cap = sizeof(struct gxfp_tap_hdr) + (size_t)GXFP_MP_FRAME_MAX;
     SESSION(s)->tap_io_buf = (uint8_t *)malloc(cap);
     if (!SESSION(s)->tap_io_buf)
         return -ENOMEM;

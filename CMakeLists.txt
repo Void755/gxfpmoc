@@ -17,6 +17,7 @@ add_library(gxfp
 		src/algo/image/fpn.c
 		src/algo/payload/provision.c
 		src/proto/goodix_proto.c
+		src/proto/mp_proto.c
 		src/tls/tls_engine_mbedtls.c
 		src/tls/tls_service.c
 		src/flow/device_recovery.c
@@ -35,6 +36,7 @@ add_library(gxfp
 target_include_directories(gxfp
 	PUBLIC
 		${CMAKE_CURRENT_SOURCE_DIR}/include
+		${CMAKE_CURRENT_SOURCE_DIR}/kernel/include
 )
 
 target_compile_options(gxfp PRIVATE -Wall -Wextra -Wpedantic)

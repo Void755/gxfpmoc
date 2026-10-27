@@ -2,6 +2,7 @@
 #include "gxfp/cmd/goodix_xfer.h"
 #include "gxfp/proto/goodix_cmd.h"
 #include "gxfp/proto/goodix_proto.h"
+#include "gxfp/proto/mp_proto.h"
 
 #include <errno.h>
 #include <string.h>
@@ -12,7 +13,7 @@ int gxfp_cmd_read_reg(struct gxfp_dev *dev,
 		      uint16_t out_len)
 {
 	uint8_t payload[5];
-	uint8_t rx[GXFP_IOCTL_TAP_PAYLOAD_MAX];
+	uint8_t rx[GXFP_MP_FRAME_MAX];
 	uint32_t rx_len = 0;
 	struct gxfp_frame_parsed frame;
 	int rc;
