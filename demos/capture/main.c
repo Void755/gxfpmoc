@@ -1,7 +1,6 @@
 #define _GNU_SOURCE
 
-#include "gxfp/flow/session.h"
-#include "gxfp/tls/tls_service.h"
+#include "gxfp_tool.h"
 #include "gxfp/algo/common.h"
 
 #include <errno.h>
@@ -10,85 +9,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-static int handle_session_error(const struct gxfp_session_events *ev)
-{
-	if (!ev)
-		return -EINVAL;
-	if (!ev->session_error)
-		return 0;
-
-	fprintf(stderr, "session error: %s (%d)\n", ev->error_msg, ev->error_code);
-	return ev->error_code ? ev->error_code : -EIO;
-}
-
-static int session_wait_until(struct gxfp_session *s,
-			      int timeout_ms,
-			      int (*done)(const struct gxfp_session_events *, void *),
-			      void *done_ctx)
-{
-	int64_t start_ms;
-	struct gxfp_session_events ev;
-
-	if (!s || !done)
-		return -EINVAL;
-
-	start_ms = gxfp_monotonic_ms();
-
-	for (;;) {
-		int pr;
-		int er;
-		int64_t now_ms = gxfp_monotonic_ms();
-
-		if (timeout_ms > 0 && (now_ms - start_ms) > timeout_ms)
-			return -ETIMEDOUT;
-
-		gxfp_session_events_clear(&ev);
-		gxfp_session_pump(s, 0, &ev);
-		er = handle_session_error(&ev);
-		if (er < 0)
-			return er;
-		if (done(&ev, done_ctx))
-			return 0;
-
-		pr = gxfp_session_poll_readable(s, 50);
-		if (pr == 0 || pr == -EAGAIN) {
-			gxfp_session_events_clear(&ev);
-			gxfp_session_on_fd(s, GXFP_SESSION_IO_IN, 0, &ev);
-			er = handle_session_error(&ev);
-			if (er < 0)
-				return er;
-			if (done(&ev, done_ctx))
-				return 0;
-		} else {
-			return pr;
-		}
-	}
-}
-
-static int done_activate(const struct gxfp_session_events *ev, void *ctx)
-{
-	(void)ctx;
-	return ev && ev->activate_complete;
-}
-
-static int done_finger_on(const struct gxfp_session_events *ev, void *ctx)
-{
-	(void)ctx;
-	return ev && ev->finger_status_changed && ev->finger_present;
-}
-
-static int done_finger_off(const struct gxfp_session_events *ev, void *ctx)
-{
-	(void)ctx;
-	return ev && ev->finger_status_changed && !ev->finger_present;
-}
-
-static int done_image(const struct gxfp_session_events *ev, void *ctx)
-{
-	(void)ctx;
-	return ev && ev->image_ready;
-}
 
 static int gxfp_write_pgm_u16(const char *path, int cols, int rows,
 		       const uint16_t *pixels, int maxval)
@@ -134,8 +54,8 @@ static int gxfp_write_pgm_u16(const char *path, int cols, int rows,
 		for (int r = 0; r < rows; r++) {
 			for (int c = 0; c < cols; c++) {
 				uint16_t v = pixels[r * cols + c];
-				row[c * 2]     = (v >> 8) & 0xFF;
-				row[c * 2 + 1] = v & 0xFF;
+				row[c * 2]     = (uint8_t)((v >> 8) & 0xFF);
+				row[c * 2 + 1] = (uint8_t)(v & 0xFF);
 			}
 			if (fwrite(row, 1, (size_t)cols * 2, f) != (size_t)cols * 2) {
 				free(row);
@@ -165,15 +85,12 @@ static int save_image_outputs(const struct gxfp_decoded_image *img)
 	return 0;
 }
 
-static int run_pov_dump(struct gxfp_session *sess)
+static int run_pov_dump(struct gxfp_tool *tool)
 {
 	int count;
 	int saved = 0;
 
-	if (!sess)
-		return 1;
-
-	count = gxfp_session_pov_count(sess);
+	count = gxfp_tool_pov_count(tool);
 	if (count < 0) {
 		fprintf(stderr, "pov: count failed: %s\n", strerror(-count));
 		return 1;
@@ -191,27 +108,26 @@ static int run_pov_dump(struct gxfp_session *sess)
 		char path[64];
 		int rc;
 
-		rc = gxfp_session_get_pov_image(sess, i, &img);
+		rc = gxfp_tool_pov_image(tool, i, &img);
 		if (rc < 0) {
 			fprintf(stderr, "pov[%d]: decode failed: %s\n",
 				i, strerror(-rc));
 			continue;
 		}
 
-		int cols = img.cols;
-		int rows = img.rows;
-
 		snprintf(path, sizeof(path), "pov-%d.pgm", i);
-		rc = gxfp_write_pgm_u16(path, cols, rows, img.pixels, 4095);
-		gxfp_decoded_image_free(&img);
+		rc = gxfp_write_pgm_u16(path, img.cols, img.rows,
+					img.pixels, 4095);
 		if (rc < 0) {
 			fprintf(stderr, "pov[%d]: save %s failed: %s\n",
 				i, path, strerror(-rc));
+			gxfp_decoded_image_free(&img);
 			continue;
 		}
 
 		fprintf(stderr, "pov[%d]: saved %s (%dx%d)\n",
-			i, path, cols, rows);
+			i, path, img.cols, img.rows);
+		gxfp_decoded_image_free(&img);
 		saved++;
 	}
 
@@ -221,7 +137,7 @@ static int run_pov_dump(struct gxfp_session *sess)
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"Usage: %s --psk-raw32 <path> [--pov [options]]\n"
+		"Usage: %s --psk-raw32 <path> [--pov]\n"
 		"\n"
 		"Options:\n"
 		"  --psk-raw32 <path>   path to 32-byte raw PSK binary file (required)\n"
@@ -241,8 +157,7 @@ int main(int argc, char **argv)
 	size_t psk_raw_len = 0;
 	uint32_t timeout_ms = 20000;
 	int pov_mode = 0;
-	struct gxfp_session sess;
-	struct gxfp_session_events ev;
+	struct gxfp_tool tool = { 0 };
 	int rc;
 
 	enum {
@@ -286,82 +201,49 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	gxfp_session_init(&sess);
-	rc = gxfp_session_open(&sess,
-			      "/dev/gxfp",
-			      psk_raw,
-			      psk_raw_len,
-			      1,
-			      NULL,
-			      0);
+	rc = gxfp_tool_open(&tool, "/dev/gxfp", psk_raw, psk_raw_len);
 	free(psk_raw);
-	psk_raw = NULL;
 	if (rc < 0) {
-		fprintf(stderr, "session_open failed: %s\n", strerror(-rc));
-		gxfp_session_dispose(&sess);
-		return 1;
-	}
-
-
-	gxfp_session_events_clear(&ev);
-	if (pov_mode)
-		rc = gxfp_session_activate_pov_only(&sess, 1, &ev);
-	else
-		rc = gxfp_session_activate(&sess, 1, &ev);
-	if (rc < 0 || handle_session_error(&ev) < 0) {
-		gxfp_session_dispose(&sess);
-		return 1;
-	}
-
-	rc = session_wait_until(&sess, (int)timeout_ms, done_activate, NULL);
-	if (rc < 0) {
-		char tls_err[128];
-		fprintf(stderr, "connect failed: %s\n", gxfp_tls_service_strerror(rc, tls_err, sizeof(tls_err)));
-		gxfp_session_dispose(&sess);
+		fprintf(stderr, "open /dev/gxfp failed: %s\n", strerror(-rc));
 		return 1;
 	}
 
 	if (pov_mode) {
-		rc = run_pov_dump(&sess);
-		gxfp_session_dispose(&sess);
-		return rc;
+		rc = gxfp_tool_connect(&tool, (int)timeout_ms);
+		if (rc == 0)
+			rc = gxfp_tool_pov_capture(&tool, 3000);
+		if (rc < 0)
+			fprintf(stderr, "pov capture failed: %s\n", strerror(-rc));
+		else
+			rc = run_pov_dump(&tool);
+		gxfp_tool_close(&tool);
+		return rc < 0 ? 1 : rc;
+	}
+
+	rc = gxfp_tool_activate(&tool, (int)timeout_ms);
+	if (rc < 0) {
+		fprintf(stderr, "activate failed: %s\n", strerror(-rc));
+		gxfp_tool_close(&tool);
+		return 1;
 	}
 
 	for (;;) {
+		struct gxfp_decoded_image img;
+
 		fprintf(stderr, "Press Enter to capture.\n");
 		if (getchar() != '\n')
 			continue;
-		struct gxfp_decoded_image img;
+
 		fprintf(stderr, "FDT armed, waiting finger down...\n");
-		gxfp_session_events_clear(&ev);
-		gxfp_session_change_state(&sess,
-					 GXFP_SESSION_STATE_AWAIT_FINGER_ON,
-					 &ev);
-		rc = handle_session_error(&ev);
-		if (rc < 0)
-			break;
-		rc = session_wait_until(&sess, 0, done_finger_on, NULL);
+		rc = gxfp_tool_wait_finger(&tool, 1, 0);
 		if (rc < 0) {
-			fprintf(stderr, "fdt gate: %s\n", strerror(-rc));
+			fprintf(stderr, "wait finger down: %s\n", strerror(-rc));
 			break;
 		}
 		fprintf(stderr, "FDT down detected. capture starts now.\n");
-
-		gxfp_session_events_clear(&ev);
-		gxfp_session_change_state(&sess, GXFP_SESSION_STATE_CAPTURE, &ev);
-		rc = handle_session_error(&ev);
-		if (rc < 0)
-			break;
-
-		rc = session_wait_until(&sess, (int)timeout_ms, done_image, NULL);
+		rc = gxfp_tool_capture(&tool, (int)timeout_ms, &img);
 		if (rc < 0) {
 			fprintf(stderr, "capture: %s\n", strerror(-rc));
-			break;
-		}
-
-		rc = gxfp_session_take_image(&sess, &img);
-		if (rc < 0) {
-			fprintf(stderr, "take_image: %s\n", strerror(-rc));
 			break;
 		}
 
@@ -373,19 +255,15 @@ int main(int argc, char **argv)
 		}
 
 		fprintf(stderr, "waiting finger up after capture...\n");
-		gxfp_session_events_clear(&ev);
-		gxfp_session_change_state(&sess,
-					 GXFP_SESSION_STATE_AWAIT_FINGER_OFF,
-					 &ev);
-		rc = handle_session_error(&ev);
-		if (rc < 0)
-			break;
-		rc = session_wait_until(&sess, 0, done_finger_off, NULL);
-		if (rc < 0 && rc != -ETIMEDOUT) {
-			fprintf(stderr, "wait_fdt_up: %s\n", strerror(-rc));
+		rc = gxfp_tool_wait_finger(&tool, 0, 0);
+		if (rc < 0) {
+			fprintf(stderr, "wait finger up: %s\n", strerror(-rc));
 			break;
 		}
 
 		fprintf(stderr, "FDT up detected, ready for next capture.\n\n");
 	}
+
+	gxfp_tool_close(&tool);
+	return rc < 0 ? 1 : 0;
 }

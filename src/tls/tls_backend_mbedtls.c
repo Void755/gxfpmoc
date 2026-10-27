@@ -1,4 +1,4 @@
-#include "tls_engine.h"
+#include "tls_backend.h"
 
 #include "gxfp/tls/tls_constants.h"
 
@@ -12,8 +12,8 @@
 #include <mbedtls/error.h>
 #include <mbedtls/ssl.h>
 
-struct gxfp_tls_engine {
-	gxfp_tls_send_record_fn send_fn;
+struct gxfp_tls_backend {
+	gxfp_tls_backend_send_fn send_fn;
 	void *send_ctx;
 	uint8_t *rxq;
 	size_t rxq_cap;
@@ -25,7 +25,7 @@ struct gxfp_tls_engine {
 	mbedtls_ctr_drbg_context ctr_drbg;
 };
 
-static int rxq_push(struct gxfp_tls_engine *e, const uint8_t *data, size_t len)
+static int rxq_push(struct gxfp_tls_backend *e, const uint8_t *data, size_t len)
 {
 	if (!e || !data)
 		return -EINVAL;
@@ -36,7 +36,7 @@ static int rxq_push(struct gxfp_tls_engine *e, const uint8_t *data, size_t len)
 	return 0;
 }
 
-static int rxq_pop(struct gxfp_tls_engine *e, uint8_t *out, size_t out_cap)
+static int rxq_pop(struct gxfp_tls_backend *e, uint8_t *out, size_t out_cap)
 {
 	size_t n;
 	if (!e || !out || out_cap == 0)
@@ -53,7 +53,7 @@ static int rxq_pop(struct gxfp_tls_engine *e, uint8_t *out, size_t out_cap)
 
 static int bio_recv(void *ctx, unsigned char *buf, size_t len)
 {
-	struct gxfp_tls_engine *e = (struct gxfp_tls_engine *)ctx;
+	struct gxfp_tls_backend *e = (struct gxfp_tls_backend *)ctx;
 	int n;
 
 	if (!e || !buf || len == 0)
@@ -69,7 +69,7 @@ static int bio_recv(void *ctx, unsigned char *buf, size_t len)
 
 static int bio_send(void *ctx, const unsigned char *buf, size_t len)
 {
-	struct gxfp_tls_engine *e = (struct gxfp_tls_engine *)ctx;
+	struct gxfp_tls_backend *e = (struct gxfp_tls_backend *)ctx;
 	size_t off = 0;
 
 	if (!e || !buf || !e->send_fn)
@@ -96,7 +96,7 @@ static int bio_send(void *ctx, const unsigned char *buf, size_t len)
 	return (int)len;
 }
 
-static int setup_ssl(struct gxfp_tls_engine *e, const uint8_t *psk, size_t psk_len)
+static int setup_ssl(struct gxfp_tls_backend *e, const uint8_t *psk, size_t psk_len)
 {
 	const char *pers = "gxfp_tls";
 	int r;
@@ -136,20 +136,20 @@ static int setup_ssl(struct gxfp_tls_engine *e, const uint8_t *psk, size_t psk_l
 	return 0;
 }
 
-int gxfp_tls_engine_create(struct gxfp_tls_engine **out,
+int gxfp_tls_backend_create(struct gxfp_tls_backend **out,
 			   const uint8_t *psk,
 			   size_t psk_len,
-			   gxfp_tls_send_record_fn send_fn,
+			   gxfp_tls_backend_send_fn send_fn,
 			   void *send_ctx)
 {
-	struct gxfp_tls_engine *e;
+	struct gxfp_tls_backend *e;
 	int r;
 
 	if (!out || !psk || psk_len != GXFP5130_PSK_LEN || !send_fn)
 		return -EINVAL;
 	*out = NULL;
 
-	e = (struct gxfp_tls_engine *)calloc(1, sizeof(*e));
+	e = (struct gxfp_tls_backend *)calloc(1, sizeof(*e));
 	if (!e)
 		return -ENOMEM;
 	e->send_fn = send_fn;
@@ -163,7 +163,7 @@ int gxfp_tls_engine_create(struct gxfp_tls_engine **out,
 
 	r = setup_ssl(e, psk, psk_len);
 	if (r < 0) {
-		gxfp_tls_engine_free(e);
+		gxfp_tls_backend_free(e);
 		return r;
 	}
 
@@ -171,7 +171,7 @@ int gxfp_tls_engine_create(struct gxfp_tls_engine **out,
 	return 0;
 }
 
-void gxfp_tls_engine_free(struct gxfp_tls_engine *e)
+void gxfp_tls_backend_free(struct gxfp_tls_backend *e)
 {
 	if (!e)
 		return;
@@ -183,7 +183,7 @@ void gxfp_tls_engine_free(struct gxfp_tls_engine *e)
 	free(e);
 }
 
-int gxfp_tls_engine_feed_cipher_record(struct gxfp_tls_engine *e,
+int gxfp_tls_backend_feed_cipher_record(struct gxfp_tls_backend *e,
 				       const uint8_t *rec,
 				       size_t rec_len)
 {
@@ -192,7 +192,7 @@ int gxfp_tls_engine_feed_cipher_record(struct gxfp_tls_engine *e,
 	return rxq_push(e, rec, rec_len);
 }
 
-int gxfp_tls_engine_handshake_step(struct gxfp_tls_engine *e)
+int gxfp_tls_backend_handshake_step(struct gxfp_tls_backend *e)
 {
 	int r;
 
@@ -211,7 +211,7 @@ int gxfp_tls_engine_handshake_step(struct gxfp_tls_engine *e)
 	return r;
 }
 
-int gxfp_tls_engine_pull_plain(struct gxfp_tls_engine *e,
+int gxfp_tls_backend_pull_plain(struct gxfp_tls_backend *e,
 			      uint8_t *out,
 			      size_t out_cap,
 			      size_t *out_len)
@@ -234,7 +234,7 @@ int gxfp_tls_engine_pull_plain(struct gxfp_tls_engine *e,
 	return r;
 }
 
-const char *gxfp_tls_engine_strerror(int err, char *buf, size_t buf_len)
+const char *gxfp_tls_backend_strerror(int err, char *buf, size_t buf_len)
 {
 	int pos;
 	const char *s;

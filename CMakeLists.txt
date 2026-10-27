@@ -18,11 +18,10 @@ add_library(gxfp
 		src/algo/payload/provision.c
 		src/proto/goodix_proto.c
 		src/proto/mp_proto.c
-		src/tls/tls_engine_mbedtls.c
-		src/tls/tls_service.c
+		src/tls/tls_backend_mbedtls.c
+		src/tls/tls_session.c
 		src/flow/device_recovery.c
 		src/flow/fdt.c
-		src/flow/session.c
 		src/cmd/tls_cmd.c
 		src/cmd/goodix_xfer.c
 		src/cmd/production_cmd.c
@@ -53,8 +52,10 @@ target_compile_options(gxfp_psk_tool PRIVATE -Wall -Wextra -Wpedantic)
 
 add_executable(gxfp_capture
 		demos/capture/main.c
+		demos/common/gxfp_tool.c
 )
 
+target_include_directories(gxfp_capture PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/demos/common)
 target_link_libraries(gxfp_capture PRIVATE gxfp)
 
 target_compile_options(gxfp_capture PRIVATE -Wall -Wextra -Wpedantic)
