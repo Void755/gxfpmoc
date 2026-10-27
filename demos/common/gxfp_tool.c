@@ -338,7 +338,7 @@ int gxfp_tool_wait_finger(struct gxfp_tool *tool, int present, int timeout_ms)
 {
 	struct gxfp_tool_impl *t;
 	enum gxfp_fdt_mode mode;
-	enum gxfp_fdt_event wanted;
+	uint32_t wanted;
 	int64_t deadline;
 	int r;
 
@@ -347,7 +347,8 @@ int gxfp_tool_wait_finger(struct gxfp_tool *tool, int present, int timeout_ms)
 	t = (struct gxfp_tool_impl *)tool->impl;
 
 	mode = present ? GXFP_FDT_MODE_WAIT_DOWN : GXFP_FDT_MODE_WAIT_UP;
-	wanted = present ? GXFP_FDT_EVENT_DOWN : GXFP_FDT_EVENT_UP;
+	wanted = present ? GXFP_FDT_EVENT_DOWN :
+			   (GXFP_FDT_EVENT_UP | GXFP_FDT_EVENT_REVERSE);
 
 	t->fdt.mode = GXFP_FDT_MODE_IDLE;
 	r = gxfp_fdt_flow_set_mode(&t->fdt, &t->dev, mode);

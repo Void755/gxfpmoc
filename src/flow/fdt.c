@@ -22,6 +22,24 @@
 #define FDT_UP_DEFAULT_OFFSET 0x15u
 #define FDT_UP_NOTOUCH_FALLBACK 0x1300u
 
+static bool fdt_base_valid(const uint8_t *raw, size_t raw_len)
+{
+	size_t i;
+
+	if (!raw || raw_len < 2)
+		return false;
+
+	for (i = 0; i + 1 < raw_len; i += 2) {
+		uint16_t value = gxfp_le16(raw + i);
+		uint8_t half = (uint8_t)(value >> 1);
+
+		if (half == 0x00 || half == 0xff)
+			return false;
+	}
+
+	return true;
+}
+
 static void fdt_downbase_from_raw(const uint8_t *raw_base,
 				  size_t raw_len,
 				  uint8_t out_table[GXFP_FDT_BASE_TABLE_LEN])
@@ -92,13 +110,13 @@ static void fdt_upbase_from_raw(uint16_t touchflag,
 	memcpy(out_table, merged, sizeof(merged));
 }
 
-static void fdt_base_table_update_from_frame(struct gxfp_cmd_fdt_state *state,
+static bool fdt_base_table_update_from_frame(struct gxfp_cmd_fdt_state *state,
 					     const struct gxfp_frame_parsed *frame)
 {
 	uint16_t irq_status;
 
-	if (!state || !frame)
-		return;
+	if (!state || !frame || !frame->payload)
+		return false;
 
 	irq_status = gxfp_le16(frame->payload);
 
@@ -109,11 +127,16 @@ static void fdt_base_table_update_from_frame(struct gxfp_cmd_fdt_state *state,
 		int second_flag = state->up_second_flag;
 
 		if (frame->payload_len < 4)
-			return;
+			return false;
 
 		touchflag = gxfp_le16(frame->payload + 2);
 		raw_base = frame->payload + 4;
 		raw_len = frame->payload_len - 4;
+		if (raw_len > (GXFP_FDT_BASE_UPDATE_ENTRIES * 2))
+			raw_len = GXFP_FDT_BASE_UPDATE_ENTRIES * 2;
+
+		if (!fdt_base_valid(raw_base, raw_len))
+			return false;
 
 		if (state->up_need_twice) {
 			second_flag = (state->up_round > 0) ? 1 : 0;
@@ -127,7 +150,7 @@ static void fdt_base_table_update_from_frame(struct gxfp_cmd_fdt_state *state,
 				   raw_base,
 				   raw_len,
 				   state->up_table_5130);
-		return;
+		return true;
 	}
 
 	if (irq_status == FDT_STATUS_IRQ_UP_GET_DOWN_BASE ||
@@ -137,24 +160,32 @@ static void fdt_base_table_update_from_frame(struct gxfp_cmd_fdt_state *state,
 		size_t raw_len;
 
 		if (frame->payload_len < 4)
-			return;
+			return false;
 
 		raw_base = frame->payload + 4;
 		raw_len = frame->payload_len - 4;
 		if (raw_len > (GXFP_FDT_BASE_UPDATE_ENTRIES * 2))
 			raw_len = GXFP_FDT_BASE_UPDATE_ENTRIES * 2;
 
+		if (!fdt_base_valid(raw_base, raw_len))
+			return false;
+
 		fdt_downbase_from_raw(raw_base, raw_len, state->down_table_5130);
+		return true;
 	}
+
+	return true;
 }
 
 static int fdt_update_state_from_record(struct gxfp_cmd_fdt_state *state,
 					const struct gxfp_tap_hdr *tap_hdr,
 					const uint8_t *payload,
 					size_t payload_len,
-					uint16_t *out_status)
+					uint16_t *out_status,
+					bool *out_base_valid)
 {
 	struct gxfp_frame_parsed frame;
+	bool base_valid;
 
 	if (!state)
 		return -EINVAL;
@@ -181,10 +212,12 @@ static int fdt_update_state_from_record(struct gxfp_cmd_fdt_state *state,
 	if (!state->base_table_inited)
 		gxfp_cmd_fdt_state_init(state);
 
-	fdt_base_table_update_from_frame(state, &frame);
+	base_valid = fdt_base_table_update_from_frame(state, &frame);
 
 	if (out_status)
 		*out_status = gxfp_le16(frame.payload);
+	if (out_base_valid)
+		*out_base_valid = base_valid;
 
 	return 0;
 }
@@ -262,20 +295,34 @@ int gxfp_fdt_flow_feed_record(struct gxfp_fdt_flow *flow,
 {
 	uint16_t status = 0;
 	uint32_t events;
+	bool base_valid = true;
 	int r;
 
 	if (!flow || !dev || !tap_hdr || !payload || !out_events)
 		return -EINVAL;
 
 	*out_events = GXFP_FDT_EVENT_NONE;
-	r = fdt_update_state_from_record(&flow->cmd, tap_hdr, payload, payload_len, &status);
+	r = fdt_update_state_from_record(&flow->cmd, tap_hdr, payload,
+					 payload_len, &status, &base_valid);
 	if (r < 0)
 		return (r == -EAGAIN || r == -ENOENT) ? -EAGAIN : r;
 
 	flow->last_status = status;
-	events = fdt_status_to_events(status);
+	events = base_valid ? fdt_status_to_events(status) :
+			      GXFP_FDT_EVENT_BASE_INVALID;
 
-	if ((events & GXFP_FDT_EVENT_REVERSE) && flow->mode == GXFP_FDT_MODE_WAIT_DOWN) {
+	if (base_valid) {
+		if (events & GXFP_FDT_EVENT_DOWN)
+			flow->state = GXFP_FDT_STATE_DOWN;
+		else if (events & (GXFP_FDT_EVENT_UP |
+				   GXFP_FDT_EVENT_REVERSE))
+			flow->state = GXFP_FDT_STATE_UP;
+	} else {
+		flow->state = GXFP_FDT_STATE_UNKNOWN;
+	}
+
+	if ((events & GXFP_FDT_EVENT_REVERSE) &&
+	    flow->mode == GXFP_FDT_MODE_WAIT_DOWN) {
 		r = gxfp_cmd_fdt_set_mode(dev, &flow->cmd);
 		if (r < 0)
 			return r;
@@ -284,10 +331,16 @@ int gxfp_fdt_flow_feed_record(struct gxfp_fdt_flow *flow,
 			return r;
 	}
 
-	if (events & GXFP_FDT_EVENT_DOWN)
-		flow->state = GXFP_FDT_STATE_DOWN;
-	if (events & GXFP_FDT_EVENT_UP)
-		flow->state = GXFP_FDT_STATE_UP;
+	if (events & GXFP_FDT_EVENT_BASE_INVALID) {
+		enum gxfp_fdt_mode mode = flow->mode;
+
+		flow->mode = GXFP_FDT_MODE_IDLE;
+		if (mode != GXFP_FDT_MODE_IDLE) {
+			r = gxfp_fdt_flow_set_mode(flow, dev, mode);
+			if (r < 0)
+				return r;
+		}
+	}
 
 	*out_events = events;
 	if (events == GXFP_FDT_EVENT_NONE)

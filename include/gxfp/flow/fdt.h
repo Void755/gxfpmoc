@@ -28,6 +28,7 @@ enum gxfp_fdt_event {
 	GXFP_FDT_EVENT_DOWN = 1u << 0,
 	GXFP_FDT_EVENT_UP = 1u << 1,
 	GXFP_FDT_EVENT_REVERSE = 1u << 2,
+	GXFP_FDT_EVENT_BASE_INVALID = 1u << 3,
 };
 
 struct gxfp_fdt_flow {
