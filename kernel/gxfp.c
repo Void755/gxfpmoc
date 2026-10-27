@@ -637,7 +637,7 @@ static int gxfp_probe(struct platform_device *pdev)
 	unsigned int irq_type;
 	int ret;
 
-	g = kzalloc_obj(*g);
+	g = kzalloc(sizeof(*g), GFP_KERNEL);
 	if (!g)
 		return -ENOMEM;
 
