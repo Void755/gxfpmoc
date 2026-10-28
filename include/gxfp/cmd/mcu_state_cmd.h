@@ -21,19 +21,20 @@ struct gxfp_mcu_state {
 	uint8_t is_tls_connected;
 	uint8_t is_locked;
 
-	uint8_t avail_img_cnt;
-	uint8_t pov_img_cnt;
+	uint8_t captured_num_hi;
+	uint8_t captured_num_lo;
 
 	uint8_t raw_3_8[6];
 
-	uint8_t ec_falling_count;
+	uint8_t byte9_raw;
 	uint8_t flags9_pba;
 	uint8_t flags9_tls_session;
-	uint8_t flags9_bit6;
+	uint8_t flags9_pov;
+	uint8_t flags9_low;
 
 	uint8_t raw_10_14[5];
 
-	uint8_t config_down_flag;
+	uint8_t byte15_raw;
 
 	uint8_t raw_16_19[4];
 };

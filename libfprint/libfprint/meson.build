@@ -161,6 +161,7 @@ driver_sources = {
             '../../src/cmd/mcu_state_cmd.c',
             '../../src/cmd/sensor_cfg_cmd.c',
             '../../src/cmd/register_cmd.c',
+            '../../src/cmd/version_cmd.c',
             '../../src/cmd/tls_cmd.c',
             '../../src/tls/tls_session.c',
             '../../src/tls/tls_backend_mbedtls.c',

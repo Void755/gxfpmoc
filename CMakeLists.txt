@@ -30,6 +30,7 @@ add_library(gxfp
 		src/cmd/mcu_state_cmd.c
 		src/cmd/sensor_cfg_cmd.c
 		src/cmd/register_cmd.c
+		src/cmd/version_cmd.c
 )
 
 target_include_directories(gxfp
@@ -60,14 +61,13 @@ target_link_libraries(gxfp_capture PRIVATE gxfp)
 
 target_compile_options(gxfp_capture PRIVATE -Wall -Wextra -Wpedantic)
 
-add_executable(gxfp_recovery
+add_executable(gxfp_info
 		demos/recovery/main.c
 )
 
-target_link_libraries(gxfp_recovery PRIVATE gxfp)
-
-target_compile_options(gxfp_recovery PRIVATE -Wall -Wextra -Wpedantic)
+target_link_libraries(gxfp_info PRIVATE gxfp)
+target_compile_options(gxfp_info PRIVATE -Wall -Wextra -Wpedantic)
 
 target_link_libraries(gxfp PUBLIC MbedTLS::mbedtls)
 target_link_libraries(gxfp_capture PRIVATE MbedTLS::mbedtls)
-target_link_libraries(gxfp_recovery PRIVATE MbedTLS::mbedtls)
+target_link_libraries(gxfp_info PRIVATE MbedTLS::mbedtls)

@@ -22,7 +22,7 @@ stdenv.mkDerivation {
     mkdir -p $out/bin
     install -m755 gxfp_psk_tool $out/bin/
     install -m755 gxfp_capture $out/bin/
-    install -m755 gxfp_recovery $out/bin/
+    install -m755 gxfp_info $out/bin/
     runHook postInstall
   '';
 

@@ -29,23 +29,24 @@ int gxfp_mcu_state_parse(const uint8_t *buf, size_t len,
 	out->is_locked          = (buf[1] >> 3) & 1;
 
 	/* byte 2 – captured_num:%d(%d) */
-	out->avail_img_cnt = buf[2] & 0x0F;
-	out->pov_img_cnt   = (buf[2] >> 4) & 0x0F;
+	out->captured_num_hi = (buf[2] >> 4) & 0x0F;
+	out->captured_num_lo = buf[2] & 0x0F;
 
 	/* bytes 3-8 */
 	memcpy(out->raw_3_8, &buf[3], sizeof(out->raw_3_8));
 
-	/* byte 9 – ec_falling_count & per-bit flags */
-	out->ec_falling_count  = buf[9];
-	out->flags9_pba         = (buf[9] >> 4) & 1;
-	out->flags9_tls_session = (buf[9] >> 5) & 1;
-	out->flags9_bit6        = (buf[9] >> 6) & 1;
+	/* byte 9 */
+	out->byte9_raw           = buf[9];
+	out->flags9_pba          = (buf[9] >> 4) & 1;
+	out->flags9_tls_session  = (buf[9] >> 5) & 1;
+	out->flags9_pov          = (buf[9] >> 6) & 1;
+	out->flags9_low          = buf[9] & 0x0F;
 
 	/* bytes 10-14 */
 	memcpy(out->raw_10_14, &buf[10], sizeof(out->raw_10_14));
 
 	/* byte 15 */
-	out->config_down_flag = buf[15];
+	out->byte15_raw = buf[15];
 
 	/* bytes 16-19 */
 	memcpy(out->raw_16_19, &buf[16], sizeof(out->raw_16_19));

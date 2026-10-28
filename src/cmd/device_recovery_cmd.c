@@ -2,6 +2,7 @@
 
 #include "gxfp/cmd/goodix_xfer.h"
 #include "gxfp/proto/goodix_cmd.h"
+#include "gxfp/proto/goodix_constants.h"
 #include "gxfp/proto/goodix_proto.h"
 #include "gxfp/proto/mp_proto.h"
 
@@ -64,17 +65,17 @@ int gxfp_cmd_notify_power_state(struct gxfp_dev *dev)
 
 int gxfp_cmd_send_nop(struct gxfp_dev *dev)
 {
-    uint8_t payload[4] = { 0x00, 0x00, 0x00, 0x00 };
+    const uint8_t frame[8] = {
+        GXFP_CMD_SEND_NOP, 0x05, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x88,
+    };
 
     if (!dev)
         return -EINVAL;
 
-    return gxfp_cmd_send_expect_ack(dev,
-                                    GXFP_CMD_SEND_NOP,
-                                    payload,
-                                    (uint16_t)sizeof(payload),
-                                    1,
-                                    GXFP_RECOVERY_CMD_TIMEOUT_MS);
+    return gxfp_dev_send_packet(dev, GOODIX_MP_TYPE_CMD,
+                                frame, (uint16_t)sizeof(frame));
 }
 
 int gxfp_cmd_sleep_cleanup(struct gxfp_dev *dev)

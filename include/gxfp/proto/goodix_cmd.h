@@ -2,7 +2,7 @@
 
 #define GXFP_CMD_SEND_NOP            0x01
 #define GXFP_CMD_NOTIFY_POWER_STATE  0x0E
-#define GXFP_CMD_RESET_DEVICE        0xA1
+#define GXFP_CMD_RESET_DEVICE        0xA2
 #define GXFP_CMD_READ_OTP            0xA6
 #define GXFP_CMD_FIRMWARE_VERSION    0xA8
 
