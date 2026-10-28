@@ -109,8 +109,29 @@ static ssize_t gxfp_rx_assemble(struct gxfp_dev *dev, void *buf, size_t buf_cap,
 
 /* ---- public API ---------------------------------------------------------- */
 
+static int
+gxfp_ec_headcount_seed(uint16_t *out)
+{
+	struct timespec ts;
+	struct tm tm;
+
+	if (!out)
+		return -EINVAL;
+
+	if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+		return -errno;
+	if (localtime_r(&ts.tv_sec, &tm) == NULL)
+		return errno ? -errno : -EINVAL;
+
+	*out = (uint16_t)(((uint32_t)tm.tm_sec * 1000u +
+			   (uint32_t)(ts.tv_nsec / 1000000L)) & 0xffffu);
+	return 0;
+}
+
 int gxfp_dev_open(struct gxfp_dev *dev, const char *path, int flags)
 {
+	int rc;
+
 	if (!dev || !path)
 		return -EINVAL;
 
@@ -124,14 +145,20 @@ int gxfp_dev_open(struct gxfp_dev *dev, const char *path, int flags)
 
 	dev->rx_chunk = malloc(GXFP_RX_RECORD_SIZE);
 	if (!dev->rx_chunk) {
-		int rc = -ENOMEM;
+		close(dev->fd);
+		dev->fd = -1;
+		return -ENOMEM;
+	}
 
+	rc = gxfp_ec_headcount_seed(&dev->seq16);
+	if (rc != 0) {
+		free(dev->rx_chunk);
+		dev->rx_chunk = NULL;
 		close(dev->fd);
 		dev->fd = -1;
 		return rc;
 	}
 
-	dev->seq16 = GXFP_MP_SEQ16_INIT;
 	return 0;
 }
 

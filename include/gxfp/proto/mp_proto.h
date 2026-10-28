@@ -14,7 +14,6 @@ extern "C" {
 
 /* eSPI wrapper header */
 #define GXFP_MP_WRAPPER_MAGIC	0xF0u
-#define GXFP_MP_SEQ16_INIT	0x8881u
 
 #define GXFP_MP_LEN_MAX		0x6C00u
 #define GXFP_MP_FRAME_MAX	(4u + GXFP_MP_LEN_MAX)

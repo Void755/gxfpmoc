@@ -111,14 +111,30 @@ int gxfp_cmd_d01(struct gxfp_dev *dev)
 int gxfp_cmd_reset_device(struct gxfp_dev *dev, uint8_t reset_flag)
 {
     uint8_t payload[2] = { reset_flag, GXFP_RESET_DELAY_MAGIC };
+    uint8_t rx[GXFP_MP_FRAME_MAX];
+    uint32_t rx_len = 0;
+    struct gxfp_frame_parsed frame;
+    int rc;
 
     if (!dev)
         return -EINVAL;
 
-    return gxfp_cmd_send_expect_ack(dev,
-                                    GXFP_CMD_RESET_DEVICE,
-                                    payload,
-                                    (uint16_t)sizeof(payload),
-                                    6,
-                                    GXFP_RECOVERY_CMD_TIMEOUT_MS);
+    rc = gxfp_goodix_request_selected(dev,
+                                      GXFP_CMD_RESET_DEVICE,
+                                      GXFP_CMD_RESET_DEVICE,
+                                      payload,
+                                      (uint16_t)sizeof(payload),
+                                      rx,
+                                      (uint32_t)sizeof(rx),
+                                      &rx_len,
+                                      6,
+                                      GXFP_RECOVERY_CMD_TIMEOUT_MS,
+                                      NULL,
+                                      NULL);
+    if (rc != 0)
+        return rc;
+    if (!gxfp_parse_goodix_body(rx, rx_len, &frame) ||
+        frame.cmd != GXFP_CMD_RESET_DEVICE)
+        return -EBADMSG;
+    return 0;
 }

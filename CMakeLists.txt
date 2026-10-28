@@ -22,7 +22,9 @@ add_library(gxfp
 		src/tls/tls_session.c
 		src/flow/device_recovery.c
 		src/flow/fdt.c
+		src/flow/milang_init.c
 		src/cmd/tls_cmd.c
+		src/cmd/mode_cmd.c
 		src/cmd/goodix_xfer.c
 		src/cmd/production_cmd.c
 		src/cmd/device_recovery_cmd.c

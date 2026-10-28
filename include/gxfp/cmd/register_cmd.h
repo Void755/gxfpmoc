@@ -12,6 +12,10 @@ int gxfp_cmd_read_reg(struct gxfp_dev *dev,
 		      uint8_t *out,
 		      uint16_t out_len);
 
+int gxfp_cmd_read_reg_u16(struct gxfp_dev *dev,
+			  uint16_t reg,
+			  uint16_t *out);
+
 int gxfp_cmd_read_chip_id(struct gxfp_dev *dev,
 			  uint16_t *out_chip_id);
 

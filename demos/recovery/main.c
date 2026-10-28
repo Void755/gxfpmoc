@@ -1,6 +1,7 @@
 #include "gxfp/cmd/device_recovery_cmd.h"
 #include "gxfp/cmd/mcu_state_cmd.h"
 #include "gxfp/cmd/register_cmd.h"
+#include "gxfp/cmd/mode_cmd.h"
 #include "gxfp/cmd/tls_cmd.h"
 #include "gxfp/cmd/version_cmd.h"
 #include "gxfp/flow/device_recovery.h"

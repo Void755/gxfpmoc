@@ -19,6 +19,12 @@ int gxfp_cmd_upload_config_mcu(struct gxfp_dev *dev,
                                uint16_t cfg_len,
                                uint8_t *out_ack_status);
 
+int gxfp_cmd_set_dac(struct gxfp_dev *dev, uint16_t dac);
+
+int gxfp_cmd_verify_sensor_cfg(struct gxfp_dev *dev,
+                               uint16_t expected_dac,
+                               uint16_t expected_tcode);
+
 #ifdef __cplusplus
 }
 #endif

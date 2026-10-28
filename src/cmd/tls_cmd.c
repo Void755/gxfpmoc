@@ -55,18 +55,6 @@ int gxfp_cmd_tls_server_init(struct gxfp_dev *dev)
                                       (uint16_t)sizeof(payload));
 }
 
-int gxfp_cmd_get_image(struct gxfp_dev *dev)
-{
-    uint8_t payload[2] = { 0x01, 0x00 };
-
-    if (!dev)
-        return -EINVAL;
-
-    return gxfp_goodix_send_async(dev,
-                                      GXFP_CMD_GET_IMAGE,
-                                      payload,
-                                      (uint16_t)sizeof(payload));
-}
 
 int gxfp_cmd_tls_unlock(struct gxfp_dev *dev)
 {

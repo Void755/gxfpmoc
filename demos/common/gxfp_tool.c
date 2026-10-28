@@ -8,8 +8,10 @@
 #include "gxfp/cmd/nav_cmd.h"
 #include "gxfp/cmd/register_cmd.h"
 #include "gxfp/cmd/sensor_cfg_cmd.h"
+#include "gxfp/cmd/mode_cmd.h"
 #include "gxfp/cmd/tls_cmd.h"
 #include "gxfp/flow/fdt.h"
+#include "gxfp/flow/milang_init.h"
 #include "gxfp/io/dev.h"
 #include "gxfp/proto/goodix_constants.h"
 #include "gxfp/proto/mp_proto.h"
@@ -24,7 +26,7 @@
 #include <time.h>
 
 #define GXFP_TOOL_POLL_MS 50
-#define GXFP_TOOL_MILANL_CHIP_ID 0x2208
+#define GXFP_TOOL_MILANG_CHIP_ID 0x2208
 
 struct gxfp_tool_impl {
 	struct gxfp_dev dev;
@@ -131,14 +133,14 @@ static int tool_pull_plain(struct gxfp_tool_impl *t)
 	}
 }
 
-static int tool_apply_milanl_cfg(struct gxfp_tool_impl *t)
+static int tool_apply_milang_cfg(struct gxfp_tool_impl *t)
 {
 	uint8_t otp[256];
 	uint16_t otp_len = 0;
-	struct gxfp_milanl_otp_cfg otp_cfg;
+	struct gxfp_milang_otp_cfg otp_cfg;
 	const uint8_t *template_data = NULL;
 	size_t template_len = 0;
-	uint8_t cfg_blob[GXFP_MILANL_CFG_LEN];
+	uint8_t cfg_blob[GXFP_MILANG_CFG_LEN];
 	uint8_t ack_status = 0xff;
 	int cfg_blob_len;
 	int r;
@@ -147,20 +149,28 @@ static int tool_apply_milanl_cfg(struct gxfp_tool_impl *t)
 	if (r < 0)
 		return r;
 
-	r = gxfp_milanl_parse_otp(otp, (size_t)otp_len, &otp_cfg);
+	r = gxfp_milang_parse_otp(otp, (size_t)otp_len, &otp_cfg);
 	if (r < 0)
 		return r;
 
-	r = gxfp_milanl_get_default_cfg_template(&template_data, &template_len);
+	r = gxfp_milang_get_default_cfg_template(&template_data, &template_len);
 	if (r < 0)
 		return r;
 
-	cfg_blob_len = gxfp_milanl_prepare_cfg_blob(template_data, template_len,
+	cfg_blob_len = gxfp_milang_prepare_cfg_blob(template_data, template_len,
 						    cfg_blob, sizeof(cfg_blob));
 	if (cfg_blob_len < 0)
 		return cfg_blob_len;
 
-	r = gxfp_milanl_apply_otp_patch(cfg_blob, (size_t)cfg_blob_len, &otp_cfg);
+	r = gxfp_milang_apply_otp_patch(cfg_blob, (size_t)cfg_blob_len, &otp_cfg);
+	if (r < 0)
+		return r;
+
+	gxfp_cmd_fdt_state_set_runtime(&t->fdt.cmd, 0, 0, 0,
+				       otp_cfg.has_tcode_delta ?
+				       (int16_t)otp_cfg.fdt_delta : 0);
+
+	r = gxfp_milang_prepare_config(&t->dev, otp_cfg.dac);
 	if (r < 0)
 		return r;
 
@@ -169,9 +179,10 @@ static int tool_apply_milanl_cfg(struct gxfp_tool_impl *t)
 	if (r < 0)
 		return r;
 
-	gxfp_cmd_fdt_state_set_runtime(&t->fdt.cmd, 0, 0, 0,
-				       otp_cfg.has_tcode_delta ?
-				       (int16_t)otp_cfg.fdt_delta : 0);
+	r = gxfp_cmd_verify_sensor_cfg(&t->dev, otp_cfg.dac, otp_cfg.tcode);
+	if (r < 0)
+		return r;
+
 	return 0;
 }
 
@@ -258,8 +269,8 @@ int gxfp_tool_open(struct gxfp_tool *tool,
 	r = gxfp_cmd_read_chip_id(&t->dev, &chip_id);
 	if (r < 0)
 		fprintf(stderr, "gxfp: read chip id failed: %s\n", strerror(-r));
-	else if (chip_id == GXFP_TOOL_MILANL_CHIP_ID) {
-		r = tool_apply_milanl_cfg(t);
+	else if (chip_id == GXFP_TOOL_MILANG_CHIP_ID) {
+		r = tool_apply_milang_cfg(t);
 		if (r < 0)
 			goto fail;
 	}

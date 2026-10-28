@@ -12,6 +12,7 @@
 #define GXFP_CMD_FDT_STATUS          0xDA
 
 #define GXFP_CMD_GET_IMAGE           0x20
+#define GXFP_CMD_SET_IDLE            0x70
 
 #define GXFP_CMD_NAV_FRAME_FIRST     0x50
 #define GXFP_CMD_NAV_FRAME_NEXT      0x52
@@ -22,6 +23,7 @@
 #define GXFP_CMD_UPLOAD_CONFIG_MCU   0x90
 
 #define GXFP_CMD_REG_READ            0x82
+#define GXFP_CMD_SET_DAC             0x98
 
 #define GXFP_CMD_TLS_SERVER_INIT     0xD0
 #define GXFP_CMD_D01                 0xD1

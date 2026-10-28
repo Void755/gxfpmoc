@@ -52,6 +52,25 @@ int gxfp_cmd_read_reg(struct gxfp_dev *dev,
 	return 0;
 }
 
+int gxfp_cmd_read_reg_u16(struct gxfp_dev *dev,
+			  uint16_t reg,
+			  uint16_t *out)
+{
+	uint8_t buf[2];
+	int rc;
+
+	if (!dev || !out)
+		return -EINVAL;
+	*out = 0;
+
+	rc = gxfp_cmd_read_reg(dev, reg, buf, (uint16_t)sizeof(buf));
+	if (rc != 0)
+		return rc;
+
+	*out = (uint16_t)((uint16_t)buf[0] | ((uint16_t)buf[1] << 8));
+	return 0;
+}
+
 int gxfp_cmd_read_chip_id(struct gxfp_dev *dev,
 			  uint16_t *out_chip_id)
 {
