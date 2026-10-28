@@ -5,6 +5,7 @@
 #include "gxfp/algo/image/plain.h"
 #include "gxfp/algo/sensor_cfg.h"
 #include "gxfp/cmd/device_recovery_cmd.h"
+#include "gxfp/cmd/nav_cmd.h"
 #include "gxfp/cmd/register_cmd.h"
 #include "gxfp/cmd/sensor_cfg_cmd.h"
 #include "gxfp/cmd/tls_cmd.h"
@@ -20,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define GXFP_TOOL_POLL_MS 50
 #define GXFP_TOOL_MILANL_CHIP_ID 0x2208
@@ -209,7 +211,9 @@ int gxfp_tool_open(struct gxfp_tool *tool,
 	uint16_t chip_id = 0;
 	int r;
 
-	if (!tool || !path || !psk || psk_len == 0)
+	if (!tool || !path)
+		return -EINVAL;
+	if (psk_len > 0 && !psk)
 		return -EINVAL;
 	if (tool->impl)
 		return -EALREADY;
@@ -219,13 +223,15 @@ int gxfp_tool_open(struct gxfp_tool *tool,
 		return -ENOMEM;
 
 	t->dev.fd = -1;
-	t->psk = (uint8_t *)malloc(psk_len);
-	if (!t->psk) {
-		free(t);
-		return -ENOMEM;
+	if (psk_len > 0) {
+		t->psk = (uint8_t *)malloc(psk_len);
+		if (!t->psk) {
+			free(t);
+			return -ENOMEM;
+		}
+		memcpy(t->psk, psk, psk_len);
+		t->psk_len = psk_len;
 	}
-	memcpy(t->psk, psk, psk_len);
-	t->psk_len = psk_len;
 
 	r = gxfp_dev_open(&t->dev, path, O_RDWR | O_NONBLOCK);
 	if (r < 0)
@@ -240,6 +246,13 @@ int gxfp_tool_open(struct gxfp_tool *tool,
 
 	gxfp_fdt_flow_init(&t->fdt);
 	gxfp_plain_sink_reset(&t->plain);
+
+	(void)gxfp_cmd_reset_device(&t->dev, 0x01);
+	(void)gxfp_cmd_get_image(&t->dev);
+	{
+		struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000L };
+		(void)nanosleep(&ts, NULL);
+	}
 	(void)gxfp_dev_flush_rxq(&t->dev);
 
 	r = gxfp_cmd_read_chip_id(&t->dev, &chip_id);
@@ -251,9 +264,11 @@ int gxfp_tool_open(struct gxfp_tool *tool,
 			goto fail;
 	}
 
-	r = tool_tls_init(t);
-	if (r < 0)
-		goto fail;
+	if (t->psk) {
+		r = tool_tls_init(t);
+		if (r < 0)
+			goto fail;
+	}
 
 	tool->impl = t;
 	return 0;
@@ -476,6 +491,33 @@ int gxfp_tool_capture(struct gxfp_tool *tool,
 		return -EINVAL;
 	return tool_capture_internal((struct gxfp_tool_impl *)tool->impl,
 				     0, timeout_ms, out);
+}
+
+int gxfp_tool_nav_frame(struct gxfp_tool *tool, int first, int timeout_ms,
+			 struct gxfp_decoded_image *out)
+{
+	struct gxfp_tool_impl *t;
+	uint8_t frame[GXFP_MP_FRAME_MAX];
+	size_t frame_len = 0;
+	struct gxfp_decode_auto_result detected;
+	int r;
+
+	if (!tool || !tool->impl || !out)
+		return -EINVAL;
+	t = (struct gxfp_tool_impl *)tool->impl;
+
+	memset(out, 0, sizeof(*out));
+	r = gxfp_cmd_nav_frame(&t->dev, first, timeout_ms,
+			       frame, sizeof(frame), &frame_len);
+	if (r < 0)
+		return r;
+
+	r = gxfp_decode_image(frame, frame_len, GXFP_DECODE_AUTO, out);
+	if (r < 0 && gxfp_decode_auto_detect(frame, frame_len, &detected) == 0) {
+		r = gxfp_decode_image(detected.payload, detected.payload_len,
+				      detected.mode, out);
+	}
+	return r;
 }
 
 int gxfp_tool_pov_capture(struct gxfp_tool *tool, int timeout_ms)

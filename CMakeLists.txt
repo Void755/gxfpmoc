@@ -30,6 +30,7 @@ add_library(gxfp
 		src/cmd/mcu_state_cmd.c
 		src/cmd/sensor_cfg_cmd.c
 		src/cmd/register_cmd.c
+		src/cmd/nav_cmd.c
 		src/cmd/version_cmd.c
 )
 

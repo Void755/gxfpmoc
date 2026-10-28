@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 
 static int gxfp_write_pgm_u16(const char *path, int cols, int rows,
 		       const uint16_t *pixels, int maxval)
@@ -70,22 +72,35 @@ static int gxfp_write_pgm_u16(const char *path, int cols, int rows,
 	return 0;
 }
 
-static int save_image_outputs(const struct gxfp_decoded_image *img)
+static int ensure_outdir(const char *outdir)
 {
+	if (!outdir || outdir[0] == '\0')
+		return -EINVAL;
+	if (mkdir(outdir, 0755) < 0 && errno != EEXIST)
+		return -errno;
+	return 0;
+}
+
+static int save_image_outputs(const char *outdir,
+			      const struct gxfp_decoded_image *img)
+{
+	char path[512];
 	int rc;
 
 	if (!img)
 		return -EINVAL;
 
-	rc = gxfp_write_pgm_u16("finger.pgm", img->cols, img->rows, img->pixels, 4095);
+	snprintf(path, sizeof(path), "%s/finger.pgm", outdir);
+	rc = gxfp_write_pgm_u16(path, img->cols, img->rows, img->pixels, 4095);
 	if (rc < 0)
 		return rc;
 
-	fprintf(stderr, "capture ok -> finger.pgm (%dx%d)\n", img->cols, img->rows);
+	fprintf(stderr, "capture ok -> %s (%dx%d)\n",
+		path, img->cols, img->rows);
 	return 0;
 }
 
-static int run_pov_dump(struct gxfp_tool *tool)
+static int run_pov_dump(struct gxfp_tool *tool, const char *outdir)
 {
 	int count;
 	int saved = 0;
@@ -105,7 +120,7 @@ static int run_pov_dump(struct gxfp_tool *tool)
 
 	for (int i = 0; i < count; i++) {
 		struct gxfp_decoded_image img;
-		char path[64];
+		char path[512];
 		int rc;
 
 		rc = gxfp_tool_pov_image(tool, i, &img);
@@ -115,7 +130,7 @@ static int run_pov_dump(struct gxfp_tool *tool)
 			continue;
 		}
 
-		snprintf(path, sizeof(path), "pov-%d.pgm", i);
+		snprintf(path, sizeof(path), "%s/pov-%d.pgm", outdir, i);
 		rc = gxfp_write_pgm_u16(path, img.cols, img.rows,
 					img.pixels, 4095);
 		if (rc < 0) {
@@ -134,20 +149,79 @@ static int run_pov_dump(struct gxfp_tool *tool)
 	return saved > 0 ? 0 : 3;
 }
 
+static void sleep_ms(long ms)
+{
+	struct timespec ts = {
+		.tv_sec = ms / 1000,
+		.tv_nsec = (ms % 1000) * 1000000L,
+	};
+
+	while (nanosleep(&ts, &ts) != 0 && errno == EINTR)
+		;
+}
+
+static int run_nav_capture(struct gxfp_tool *tool, int frames,
+			   int interval_ms, const char *outdir)
+{
+	int saved = 0;
+
+	for (int i = 0; i < frames; i++) {
+		struct gxfp_decoded_image img;
+		char path[512];
+		int rc;
+
+		rc = gxfp_tool_nav_frame(tool, i == 0, 1000, &img);
+		if (rc < 0) {
+			fprintf(stderr, "nav[%d]: capture failed: %s\n",
+				i, strerror(-rc));
+			break;
+		}
+
+		snprintf(path, sizeof(path), "%s/nav-%03d.pgm", outdir, i);
+		rc = gxfp_write_pgm_u16(path, img.cols, img.rows,
+					img.pixels, 4095);
+		if (rc < 0) {
+			fprintf(stderr, "nav[%d]: save %s failed: %s\n",
+				i, path, strerror(-rc));
+			gxfp_decoded_image_free(&img);
+			break;
+		}
+
+		fprintf(stderr, "nav[%d]: saved %s (%dx%d)\n",
+			i, path, img.cols, img.rows);
+		gxfp_decoded_image_free(&img);
+		saved++;
+
+		if (i + 1 < frames && interval_ms > 0)
+			sleep_ms(interval_ms);
+	}
+
+	return saved > 0 ? 0 : 1;
+}
+
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"Usage: %s --psk-raw32 <path> [--pov]\n"
+		"Usage: %s --psk-raw32 <path> [--pov] [--outdir DIR]\n"
+		"       %s --nav [--frames N] [--interval-ms N] [--outdir DIR]\n"
+		"\n"
+		"Capture modes:\n"
+		"  default              interactive fingerprint image capture\n"
+		"  --pov                capture boot POV frames only\n"
+		"  --nav                capture a sequence of NAV frames only\n"
 		"\n"
 		"Options:\n"
-		"  --psk-raw32 <path>   path to 32-byte raw PSK binary file (required)\n"
-		"  --pov                capture boot POV frames only\n"
+		"  --psk-raw32 <path>   path to 32-byte raw PSK (required except --nav)\n"
+		"  --frames N           NAV frame count (default: 10)\n"
+		"  --interval-ms N      delay between NAV frames (default: 20)\n"
+		"  --outdir DIR         output directory for all modes (default: .)\n"
 		"  -h, --help           show this help\n"
 		"\n"
 		"Output:\n"
 		"  finger.pgm           16-bit PGM fingerprint image\n"
-		"  pov-<n>.pgm          16-bit PGM POV image (POV mode)\n",
-		argv0);
+		"  pov-<n>.pgm          16-bit PGM POV image (POV mode)\n"
+		"  nav-<n>.pgm          16-bit PGM NAV image (NAV mode)\n",
+		argv0, argv0);
 }
 
 int main(int argc, char **argv)
@@ -157,16 +231,28 @@ int main(int argc, char **argv)
 	size_t psk_raw_len = 0;
 	uint32_t timeout_ms = 20000;
 	int pov_mode = 0;
+	int nav_mode = 0;
+	int nav_frames = 10;
+	int nav_interval_ms = 20;
+	const char *outdir = ".";
 	struct gxfp_tool tool = { 0 };
 	int rc;
 
 	enum {
 		OPT_POV = 1000,
+		OPT_NAV,
+		OPT_FRAMES,
+		OPT_INTERVAL,
+		OPT_OUTDIR,
 	};
 
 	struct option long_opts[] = {
 		{"psk-raw32", required_argument, NULL, 'p'},
 		{"pov",        no_argument,       NULL, OPT_POV},
+		{"nav",        no_argument,       NULL, OPT_NAV},
+		{"frames",     required_argument, NULL, OPT_FRAMES},
+		{"interval-ms",required_argument, NULL, OPT_INTERVAL},
+		{"outdir",     required_argument, NULL, OPT_OUTDIR},
 		{"help",      no_argument,       NULL, 'h'},
 		{NULL, 0, NULL, 0}
 	};
@@ -180,6 +266,18 @@ int main(int argc, char **argv)
 		case OPT_POV:
 			pov_mode = 1;
 			break;
+		case OPT_NAV:
+			nav_mode = 1;
+			break;
+		case OPT_FRAMES:
+			nav_frames = atoi(optarg);
+			break;
+		case OPT_INTERVAL:
+			nav_interval_ms = atoi(optarg);
+			break;
+		case OPT_OUTDIR:
+			outdir = optarg;
+			break;
 		case 'h':
 			usage(argv[0]);
 			return 0;
@@ -189,23 +287,48 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (!psk_raw32_file) {
+	if (!nav_mode && !psk_raw32_file) {
 		fprintf(stderr, "Missing required option: --psk-raw32\n");
 		usage(argv[0]);
 		return 2;
 	}
+	if (nav_frames <= 0 || nav_interval_ms < 0) {
+		fprintf(stderr, "invalid NAV frame count or interval\n");
+		usage(argv[0]);
+		return 2;
+	}
 
-	rc = gxfp_read_file_all(psk_raw32_file, &psk_raw, &psk_raw_len);
+	rc = ensure_outdir(outdir);
 	if (rc < 0) {
-		fprintf(stderr, "read PSK '%s' failed: %s\n", psk_raw32_file, strerror(-rc));
+		fprintf(stderr, "create output directory '%s' failed: %s\n",
+			outdir, strerror(-rc));
 		return 1;
 	}
 
-	rc = gxfp_tool_open(&tool, "/dev/gxfp", psk_raw, psk_raw_len);
+	if (psk_raw32_file) {
+		rc = gxfp_read_file_all(psk_raw32_file, &psk_raw, &psk_raw_len);
+		if (rc < 0) {
+			fprintf(stderr, "read PSK '%s' failed: %s\n",
+				psk_raw32_file, strerror(-rc));
+			return 1;
+		}
+	}
+
+	rc = gxfp_tool_open(&tool, "/dev/gxfp",
+			    nav_mode ? NULL : psk_raw,
+			    nav_mode ? 0 : psk_raw_len);
 	free(psk_raw);
+	psk_raw = NULL;
 	if (rc < 0) {
 		fprintf(stderr, "open /dev/gxfp failed: %s\n", strerror(-rc));
 		return 1;
+	}
+
+	if (nav_mode) {
+		rc = run_nav_capture(&tool, nav_frames, nav_interval_ms,
+				     outdir);
+		gxfp_tool_close(&tool);
+		return rc;
 	}
 
 	if (pov_mode) {
@@ -215,7 +338,7 @@ int main(int argc, char **argv)
 		if (rc < 0)
 			fprintf(stderr, "pov capture failed: %s\n", strerror(-rc));
 		else
-			rc = run_pov_dump(&tool);
+			rc = run_pov_dump(&tool, outdir);
 		gxfp_tool_close(&tool);
 		return rc < 0 ? 1 : rc;
 	}
@@ -247,7 +370,7 @@ int main(int argc, char **argv)
 			break;
 		}
 
-		rc = save_image_outputs(&img);
+		rc = save_image_outputs(outdir, &img);
 		gxfp_decoded_image_free(&img);
 		if (rc < 0) {
 			fprintf(stderr, "save_image: %s\n", strerror(-rc));

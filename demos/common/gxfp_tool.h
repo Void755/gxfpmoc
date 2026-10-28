@@ -30,6 +30,9 @@ int gxfp_tool_capture(struct gxfp_tool *tool,
 		      int timeout_ms,
 		      struct gxfp_decoded_image *out);
 
+int gxfp_tool_nav_frame(struct gxfp_tool *tool, int first, int timeout_ms,
+			struct gxfp_decoded_image *out);
+
 int gxfp_tool_pov_capture(struct gxfp_tool *tool, int timeout_ms);
 int gxfp_tool_pov_count(const struct gxfp_tool *tool);
 int gxfp_tool_pov_image(const struct gxfp_tool *tool, int index,

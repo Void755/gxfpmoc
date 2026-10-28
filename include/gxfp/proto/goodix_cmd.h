@@ -13,6 +13,9 @@
 
 #define GXFP_CMD_GET_IMAGE           0x20
 
+#define GXFP_CMD_NAV_FRAME_FIRST     0x50
+#define GXFP_CMD_NAV_FRAME_NEXT      0x52
+
 #define GXFP_CMD_QUERY_MCU_STATE     0xAE
 #define GXFP_CMD_TRIGGER_MCU_STATE   0xAF
 #define GXFP_CMD_ACK                 0xB0
