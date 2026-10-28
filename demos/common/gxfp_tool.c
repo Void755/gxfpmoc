@@ -41,6 +41,7 @@ struct gxfp_tool_impl {
 
 	struct gxfp_fpn_dark dark;
 	int dark_loaded;
+	int fpn_enabled;
 };
 
 static int tool_store_dark(struct gxfp_tool_impl *t,
@@ -234,6 +235,7 @@ int gxfp_tool_open(struct gxfp_tool *tool,
 		return -ENOMEM;
 
 	t->dev.fd = -1;
+	t->fpn_enabled = 1;
 	if (psk_len > 0) {
 		t->psk = (uint8_t *)malloc(psk_len);
 		if (!t->psk) {
@@ -425,7 +427,7 @@ static int tool_store_raw_image(struct gxfp_tool_impl *t, int reference,
 		return r;
 	}
 
-	if (t->dark_loaded) {
+	if (t->fpn_enabled && t->dark_loaded) {
 		r = gxfp_fpn_correct(img.pixels, img.rows, img.cols, &t->dark);
 		if (r < 0) {
 			gxfp_decoded_image_free(&img);
@@ -478,20 +480,45 @@ static int tool_capture_internal(struct gxfp_tool_impl *t, int reference,
 	return tool_store_raw_image(t, reference, out);
 }
 
+int gxfp_tool_set_fpn_enabled(struct gxfp_tool *tool, int enabled)
+{
+	struct gxfp_tool_impl *t;
+
+	if (!tool || !tool->impl)
+		return -EINVAL;
+
+	t = (struct gxfp_tool_impl *)tool->impl;
+	t->fpn_enabled = enabled ? 1 : 0;
+
+	if (!t->fpn_enabled && t->dark_loaded) {
+		gxfp_fpn_free(&t->dark);
+		t->dark_loaded = 0;
+	}
+
+	return 0;
+}
+
 int gxfp_tool_activate(struct gxfp_tool *tool, int timeout_ms)
 {
+	struct gxfp_tool_impl *t;
 	int r;
 
+	if (!tool || !tool->impl)
+		return -EINVAL;
+
+	t = (struct gxfp_tool_impl *)tool->impl;
 	r = gxfp_tool_connect(tool, timeout_ms);
 	if (r < 0)
 		return r;
+
+	if (!t->fpn_enabled)
+		return 0;
 
 	r = gxfp_tool_wait_finger(tool, 0, timeout_ms);
 	if (r < 0)
 		return r;
 
-	return tool_capture_internal(
-		(struct gxfp_tool_impl *)tool->impl, 1, timeout_ms, NULL);
+	return tool_capture_internal(t, 1, timeout_ms, NULL);
 }
 
 int gxfp_tool_capture(struct gxfp_tool *tool,

@@ -202,7 +202,7 @@ static int run_nav_capture(struct gxfp_tool *tool, int frames,
 static void usage(const char *argv0)
 {
 	fprintf(stderr,
-		"Usage: %s --psk-raw32 <path> [--pov] [--outdir DIR]\n"
+		"Usage: %s --psk-raw32 <path> [--pov] [--no-fpn] [--outdir DIR]\n"
 		"       %s --nav [--frames N] [--interval-ms N] [--outdir DIR]\n"
 		"\n"
 		"Capture modes:\n"
@@ -212,6 +212,7 @@ static void usage(const char *argv0)
 		"\n"
 		"Options:\n"
 		"  --psk-raw32 <path>   path to 32-byte raw PSK (required except --nav)\n"
+		"  --no-fpn             disable dark-frame/FPN correction\n"
 		"  --frames N           NAV frame count (default: 10)\n"
 		"  --interval-ms N      delay between NAV frames (default: 20)\n"
 		"  --outdir DIR         output directory for all modes (default: .)\n"
@@ -232,6 +233,7 @@ int main(int argc, char **argv)
 	uint32_t timeout_ms = 20000;
 	int pov_mode = 0;
 	int nav_mode = 0;
+	int fpn_enabled = 1;
 	int nav_frames = 10;
 	int nav_interval_ms = 20;
 	const char *outdir = ".";
@@ -241,6 +243,7 @@ int main(int argc, char **argv)
 	enum {
 		OPT_POV = 1000,
 		OPT_NAV,
+		OPT_NO_FPN,
 		OPT_FRAMES,
 		OPT_INTERVAL,
 		OPT_OUTDIR,
@@ -250,6 +253,7 @@ int main(int argc, char **argv)
 		{"psk-raw32", required_argument, NULL, 'p'},
 		{"pov",        no_argument,       NULL, OPT_POV},
 		{"nav",        no_argument,       NULL, OPT_NAV},
+		{"no-fpn",     no_argument,       NULL, OPT_NO_FPN},
 		{"frames",     required_argument, NULL, OPT_FRAMES},
 		{"interval-ms",required_argument, NULL, OPT_INTERVAL},
 		{"outdir",     required_argument, NULL, OPT_OUTDIR},
@@ -268,6 +272,9 @@ int main(int argc, char **argv)
 			break;
 		case OPT_NAV:
 			nav_mode = 1;
+			break;
+		case OPT_NO_FPN:
+			fpn_enabled = 0;
 			break;
 		case OPT_FRAMES:
 			nav_frames = atoi(optarg);
@@ -321,6 +328,13 @@ int main(int argc, char **argv)
 	psk_raw = NULL;
 	if (rc < 0) {
 		fprintf(stderr, "open /dev/gxfp failed: %s\n", strerror(-rc));
+		return 1;
+	}
+
+	rc = gxfp_tool_set_fpn_enabled(&tool, fpn_enabled);
+	if (rc < 0) {
+		fprintf(stderr, "configure FPN failed: %s\n", strerror(-rc));
+		gxfp_tool_close(&tool);
 		return 1;
 	}
 

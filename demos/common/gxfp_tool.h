@@ -22,6 +22,8 @@ void gxfp_tool_close(struct gxfp_tool *tool);
 
 int gxfp_tool_connect(struct gxfp_tool *tool, int timeout_ms);
 
+int gxfp_tool_set_fpn_enabled(struct gxfp_tool *tool, int enabled);
+
 int gxfp_tool_activate(struct gxfp_tool *tool, int timeout_ms);
 
 int gxfp_tool_wait_finger(struct gxfp_tool *tool, int present, int timeout_ms);
