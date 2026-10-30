@@ -21,27 +21,18 @@ int gxfp_cmd_image_mode_send(struct gxfp_dev *dev)
 int gxfp_cmd_image_mode_wait(struct gxfp_dev *dev, int timeout_ms)
 {
     uint8_t rx[GXFP_MP_FRAME_MAX];
-    uint32_t rx_len = 0;
-    struct gxfp_frame_parsed frame;
-    int r;
 
     if (!dev)
         return -EINVAL;
 
-    r = gxfp_goodix_wait_selected(dev,
-                                  GXFP_CMD_GET_IMAGE,
-                                  rx,
-                                  (uint32_t)sizeof(rx),
-                                  &rx_len,
-                                  timeout_ms > 0 ? timeout_ms : 500,
-                                  NULL,
-                                  NULL);
-    if (r < 0)
-        return r;
-    if (!gxfp_parse_goodix_body(rx, rx_len, &frame) ||
-        frame.cmd != GXFP_CMD_GET_IMAGE)
-        return -EBADMSG;
-    return 0;
+    return gxfp_goodix_wait_selected(dev,
+                                     GXFP_CMD_ACK,
+                                     rx,
+                                     (uint32_t)sizeof(rx),
+                                     NULL,
+                                     timeout_ms > 0 ? timeout_ms : 200,
+                                     NULL,
+                                     NULL);
 }
 
 int gxfp_cmd_image_mode_sync(struct gxfp_dev *dev, int timeout_ms)

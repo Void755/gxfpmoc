@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 #define GXFP_MILANG_RESET_SETTLE_US 1000
-#define GXFP_MILANG_IMAGE_EVENT_TIMEOUT_MS 500
+#define GXFP_MILANG_IMAGE_ACK_TIMEOUT_MS 200
 
 int gxfp_milang_prepare_config(struct gxfp_dev *dev, uint16_t dac)
 {
@@ -35,9 +35,6 @@ int gxfp_milang_prepare_config(struct gxfp_dev *dev, uint16_t dac)
     if (r < 0)
         return r;
 
-    r = gxfp_cmd_image_mode_wait(dev, GXFP_MILANG_IMAGE_EVENT_TIMEOUT_MS);
-    if (r == -ETIMEDOUT) {
-        return 0;
-    }
+    r = gxfp_cmd_image_mode_wait(dev, GXFP_MILANG_IMAGE_ACK_TIMEOUT_MS);
     return r;
 }
