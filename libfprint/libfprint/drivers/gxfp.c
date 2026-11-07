@@ -89,6 +89,7 @@ struct _FpiDeviceGxfp {
   FpiSsm *task_ssm;
   enum gxfp_task_kind task_kind;
   int64_t task_deadline_ms;
+  gboolean task_retry_scheduled;
 
   int deactivating;
   int deactivate_complete_sent;
@@ -131,8 +132,9 @@ gxfp_task_expired (FpiDeviceGxfp *self)
 }
 
 static void
-gxfp_schedule_retry (FpiSsm *ssm)
+gxfp_schedule_retry (FpiDeviceGxfp *self, FpiSsm *ssm)
 {
+  self->task_retry_scheduled = TRUE;
   fpi_ssm_jump_to_state_delayed (ssm, fpi_ssm_get_cur_state (ssm),
                                  GXFP_RETRY_DELAY_MS);
 }
@@ -321,6 +323,7 @@ gxfp_task_finished (FpiSsm *ssm, FpDevice *dev, GError *error)
       self->task_ssm = NULL;
       self->task_kind = GXFP_TASK_NONE;
       self->task_deadline_ms = 0;
+      self->task_retry_scheduled = FALSE;
     }
 
   if (self->closing)
@@ -381,6 +384,17 @@ gxfp_track_task (FpiDeviceGxfp *self, FpiSsm *ssm, enum gxfp_task_kind kind,
   self->task_ssm = ssm;
   self->task_kind = kind;
   self->task_deadline_ms = deadline_ms;
+  self->task_retry_scheduled = FALSE;
+}
+
+static void
+gxfp_cancel_task_retry (FpiDeviceGxfp *self, FpiSsm *ssm)
+{
+  if (self->task_retry_scheduled)
+    {
+      self->task_retry_scheduled = FALSE;
+      fpi_ssm_cancel_delayed_state_change (ssm);
+    }
 }
 
 static void
@@ -388,6 +402,7 @@ gxfp_cancel_task (FpiDeviceGxfp *self)
 {
   if (self->task_ssm)
     {
+      gxfp_cancel_task_retry (self, self->task_ssm);
       fpi_ssm_mark_failed (self->task_ssm,
                            g_error_new_literal (G_IO_ERROR, G_IO_ERROR_CANCELLED,
                                                 "Operation cancelled"));
@@ -407,6 +422,8 @@ gxfp_activate_ssm_handler (FpiSsm *ssm, FpDevice *dev)
   FpiDeviceGxfp *self = FPI_DEVICE_GXFP (dev);
   uint32_t events = GXFP_FDT_EVENT_NONE;
   int r;
+
+  self->task_retry_scheduled = FALSE;
 
   if (gxfp_task_expired (self))
     {
@@ -438,7 +455,7 @@ gxfp_activate_ssm_handler (FpiSsm *ssm, FpDevice *dev)
         if (r == 1)
           fpi_ssm_next_state (ssm);
         else if (r == -EAGAIN)
-          gxfp_schedule_retry (ssm);
+          gxfp_schedule_retry (self, ssm);
         else
           fpi_ssm_mark_failed (ssm, gxfp_error_from_errno (r, "TLS handshake"));
       }
@@ -465,7 +482,7 @@ gxfp_activate_ssm_handler (FpiSsm *ssm, FpDevice *dev)
       if (events & (GXFP_FDT_EVENT_UP | GXFP_FDT_EVENT_REVERSE))
         fpi_ssm_next_state (ssm);
       else
-        gxfp_schedule_retry (ssm);
+        gxfp_schedule_retry (self, ssm);
       break;
 
     case GXFP_ACTIVATE_REFERENCE_START:
@@ -491,7 +508,7 @@ gxfp_activate_ssm_handler (FpiSsm *ssm, FpDevice *dev)
       else if (self->plain.have_normal)
         fpi_ssm_next_state (ssm);
       else
-        gxfp_schedule_retry (ssm);
+        gxfp_schedule_retry (self, ssm);
       break;
 
     case GXFP_ACTIVATE_REFERENCE_STORE:
@@ -518,6 +535,8 @@ gxfp_wait_ssm_handler (FpiSsm *ssm, FpDevice *dev)
   uint32_t events = GXFP_FDT_EVENT_NONE;
   uint32_t wanted;
   int r;
+
+  self->task_retry_scheduled = FALSE;
 
   wanted = self->task_kind == GXFP_TASK_WAIT_DOWN ?
            GXFP_FDT_EVENT_DOWN :
@@ -553,7 +572,7 @@ gxfp_wait_ssm_handler (FpiSsm *ssm, FpDevice *dev)
       if (events & wanted)
         fpi_ssm_next_state (ssm);
       else
-        gxfp_schedule_retry (ssm);
+        gxfp_schedule_retry (self, ssm);
       break;
 
     case GXFP_WAIT_FDT_DONE:
@@ -570,6 +589,8 @@ gxfp_capture_ssm_handler (FpiSsm *ssm, FpDevice *dev)
 {
   FpiDeviceGxfp *self = FPI_DEVICE_GXFP (dev);
   int r;
+
+  self->task_retry_scheduled = FALSE;
 
   if (gxfp_task_expired (self))
     {
@@ -608,7 +629,7 @@ gxfp_capture_ssm_handler (FpiSsm *ssm, FpDevice *dev)
       else if (self->plain.have_normal)
         fpi_ssm_next_state (ssm);
       else
-        gxfp_schedule_retry (ssm);
+        gxfp_schedule_retry (self, ssm);
       break;
 
     case GXFP_CAPTURE_STORE:
@@ -833,6 +854,7 @@ gxfp_img_close (FpImageDevice *dev)
     {
       FpiSsm *ssm = self->task_ssm;
       self->task_ssm = NULL;
+      gxfp_cancel_task_retry (self, ssm);
       fpi_ssm_mark_failed (ssm, g_error_new_literal (G_IO_ERROR,
                                                      G_IO_ERROR_CANCELLED,
                                                      "Device closing"));
