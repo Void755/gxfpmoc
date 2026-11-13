@@ -7,34 +7,36 @@
 #include <errno.h>
 #include <unistd.h>
 
-#define GXFP_MILANG_RESET_SETTLE_US 1000
-#define GXFP_MILANG_IMAGE_ACK_TIMEOUT_MS 200
+#define GXFP_SENSOR_RESET_SETTLE_US 1000
+#define GXFP_SENSOR_IMAGE_ACK_TIMEOUT_MS 200
 
-int gxfp_milang_prepare_config(struct gxfp_dev *dev, uint16_t dac)
+int gxfp_sensor_prepare_config(struct gxfp_dev *dev,
+			       enum gxfp_sensor_variant variant,
+			       const struct gxfp_sensor_cfg *cfg)
 {
-    int r;
+	int r;
 
-    if (!dev)
-        return -EINVAL;
+	(void)variant;
+	if (!dev || !cfg || cfg->dac_count == 0)
+		return -EINVAL;
 
-    r = gxfp_cmd_reset_device(dev, 0x01);
-    if (r < 0)
-        return r;
-    usleep(GXFP_MILANG_RESET_SETTLE_US);
+	r = gxfp_cmd_reset_device(dev, 0x01);
+	if (r < 0)
+		return r;
+	usleep(GXFP_SENSOR_RESET_SETTLE_US);
 
-    r = gxfp_cmd_set_dac(dev, dac);
-    if (r < 0)
-        return r;
+	r = gxfp_cmd_set_dac_values(dev, cfg->dac, cfg->dac_count);
+	if (r < 0)
+		return r;
 
-    r = gxfp_cmd_reset_device(dev, 0x01);
-    if (r < 0)
-        return r;
-    usleep(GXFP_MILANG_RESET_SETTLE_US);
+	r = gxfp_cmd_reset_device(dev, 0x01);
+	if (r < 0)
+		return r;
+	usleep(GXFP_SENSOR_RESET_SETTLE_US);
 
-    r = gxfp_cmd_image_mode_send(dev);
-    if (r < 0)
-        return r;
+	r = gxfp_cmd_image_mode_send(dev);
+	if (r < 0)
+		return r;
 
-    r = gxfp_cmd_image_mode_wait(dev, GXFP_MILANG_IMAGE_ACK_TIMEOUT_MS);
-    return r;
+	return gxfp_cmd_image_mode_wait(dev, GXFP_SENSOR_IMAGE_ACK_TIMEOUT_MS);
 }

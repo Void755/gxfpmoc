@@ -12,6 +12,9 @@ add_library(gxfp
 		src/io/dev.c
 		src/algo/common.c
 		src/algo/sensor_cfg.c
+		src/algo/sensor_variant.c
+		src/algo/chicagoh.c
+		src/algo/milang.c
 		src/algo/image/plain.c
 		src/algo/image/decoder.c
 		src/algo/image/fpn.c
@@ -23,6 +26,7 @@ add_library(gxfp
 		src/flow/device_recovery.c
 		src/flow/fdt.c
 		src/flow/milang_init.c
+		src/flow/sensor_bootstrap.c
 		src/cmd/tls_cmd.c
 		src/cmd/mode_cmd.c
 		src/cmd/goodix_xfer.c

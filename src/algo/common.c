@@ -31,6 +31,23 @@ int64_t gxfp_monotonic_ms(void)
 	return (int64_t)ts.tv_sec * 1000 + (int64_t)ts.tv_nsec / 1000000;
 }
 
+uint8_t gxfp_crc8(const uint8_t *data, size_t len)
+{
+	uint8_t crc = 0;
+	size_t i;
+
+	for (i = 0; i < len; i++) {
+		uint8_t bit;
+
+		crc ^= data[i];
+		for (bit = 0; bit < 8; bit++)
+			crc = (crc & 0x80u) ? (uint8_t)((crc << 1) ^ 0x07u) :
+						 (uint8_t)(crc << 1);
+	}
+
+	return (uint8_t)~crc;
+}
+
 int gxfp_read_file_all(const char *path, uint8_t **out_buf, size_t *out_len)
 {
 	FILE *f;

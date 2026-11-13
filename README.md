@@ -59,13 +59,11 @@ The sensor is identified via ACPI as `GXFP5130` and connects over eSPI (not the 
 | Device | Sensor ID | Sensor Size | MCU Firmware | Status |
 |---|---|---|---|---|
 | MateBook GT 14 | ACPI/GXFP5130 | 176×54 | GF_GCC_EC_20061 | 🟢 |
-| MateBook 14 2024 | ACPI/GXFP5130 | 64×80 | GF_GCC_EC_20068 | 🟡 ¹ |
-| MateBook X Pro 2024 | ACPI/GXFP5130 | - | GF_GCC_EC_20068 | 🟡 ² |
-| MateBook X Pro 2024 | ACPI/SIL6250 | - | - | 🔴 ² |
+| MateBook 14 2024 | ACPI/GXFP5130 | 64×80 | GF_GCC_EC_20068 | 🟡 |
+| MateBook X Pro 2024 | ACPI/GXFP5130 | - | GF_GCC_EC_20068 | 🟡 |
+| MateBook X Pro 2024 | ACPI/SIL6250 | - | - | 🔴 ¹ |
 
-¹ Image capture works. SIGFM matching unverified
-
-² See [gxfp_linux_driver#1](https://github.com/Void755/gxfp_linux_driver/issues/1)
+¹ See [gxfp_linux_driver#1](https://github.com/Void755/gxfp_linux_driver/issues/1)
 
 ## Building
 

@@ -1,11 +1,14 @@
 #include "gxfp/cmd/device_recovery_cmd.h"
 #include "gxfp/cmd/mcu_state_cmd.h"
 #include "gxfp/cmd/register_cmd.h"
+#include "gxfp/cmd/sensor_cfg_cmd.h"
+#include "gxfp/algo/sensor_cfg.h"
 #include "gxfp/cmd/mode_cmd.h"
 #include "gxfp/cmd/tls_cmd.h"
 #include "gxfp/cmd/version_cmd.h"
 #include "gxfp/flow/device_recovery.h"
 #include "gxfp/io/dev.h"
+#include "gxfp/proto/sensor_variant.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -109,6 +112,35 @@ static void print_mcu_state(const struct gxfp_mcu_state *state)
 	       state->raw_16_19[2], state->raw_16_19[3]);
 }
 
+static void
+print_otp_summary(struct gxfp_dev *dev, enum gxfp_sensor_variant variant)
+{
+	struct gxfp_sensor_cfg cfg;
+	uint8_t otp[256];
+	uint16_t otp_len = 0;
+	int r;
+
+	if (variant != GXFP_SENSOR_VARIANT_MILANG &&
+	    variant != GXFP_SENSOR_VARIANT_CHICAGOHS)
+		return;
+
+	r = gxfp_cmd_read_otp(dev, otp, (uint16_t)sizeof(otp), &otp_len);
+	if (r < 0) {
+		printf("otp: read failed: %s\n", strerror(-r));
+		return;
+	}
+	r = gxfp_sensor_parse_otp(variant, otp, (size_t)otp_len, &cfg);
+	if (r < 0) {
+		printf("otp valid: no\n");
+		return;
+	}
+	printf("otp valid: yes\n");
+	printf("  tcode: 0x%04x\n", cfg.tcode);
+	printf("  fdt delta: 0x%04x\n", cfg.fdt_delta);
+	for (uint8_t i = 0; i < cfg.dac_count; i++)
+		printf("  dac%u: 0x%04x\n", i, cfg.dac[i]);
+}
+
 static int print_device_info(struct gxfp_dev *dev)
 {
 	struct gxfp_mcu_state state;
@@ -123,7 +155,17 @@ static int print_device_info(struct gxfp_dev *dev)
 		print_info_error("read chip id", r);
 		info_rc = 1;
 	} else {
+		enum gxfp_sensor_variant variant =
+			gxfp_sensor_variant_from_chip_id(chip_id);
+		const struct gxfp_sensor_variant_info *info =
+			gxfp_sensor_variant_info(variant);
+
 		printf("chip id: 0x%04x\n", chip_id);
+		printf("sensor family: %s\n",
+		       gxfp_sensor_variant_name(variant));
+		if (info)
+			printf("otp size: %u bytes\n", info->otp_len);
+		print_otp_summary(dev, variant);
 	}
 
 	r = gxfp_cmd_read_firmware_version(dev, version, sizeof(version),

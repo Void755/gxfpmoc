@@ -5,121 +5,142 @@
 
 #include <errno.h>
 #include <string.h>
+#include <time.h>
 
-#define GXFP_FDT_BASE_TABLE_LEN 24
+#define GXFP_FDT_TABLE_CAP 24
+#define GXFP_FDT_PAYLOAD_CAP 34
+
 #define FDT_CMD_DOWN_MAGIC_0 0x08
-#define FDT_CMD_DOWN_MAGIC_1 0x01
 #define FDT_CMD_MODE_MAGIC_0 0x09
-#define FDT_CMD_MODE_MAGIC_1 0x01
 #define FDT_CMD_UP_MAGIC_0 0x0A
-#define FDT_CMD_UP_MAGIC_1 0x01
-#define GXFP_FDT_WIRE_TRAILER_LEN 8
+#define FDT_CMD_BASE_TYPE 0x01
+#define GXFP_FDT_MILANG_TRAILER_LEN 8
 
-#define FDT_PAYLOAD_SIZE_DOWN (2 + GXFP_FDT_BASE_TABLE_LEN + GXFP_FDT_WIRE_TRAILER_LEN)
-#define FDT_PAYLOAD_SIZE_MODE (2 + GXFP_FDT_BASE_TABLE_LEN + GXFP_FDT_WIRE_TRAILER_LEN)
-#define FDT_PAYLOAD_SIZE_UP (2 + GXFP_FDT_BASE_TABLE_LEN + GXFP_FDT_WIRE_TRAILER_LEN)
+static uint8_t
+fdt_payload_build(const struct gxfp_cmd_fdt_state *state,
+		  uint8_t command,
+		  const uint8_t *table,
+		  uint8_t payload[GXFP_FDT_PAYLOAD_CAP],
+		  int with_timestamp)
+{
+	size_t table_len;
+	size_t len;
+
+	if (!state || !table)
+		return 0;
+
+	table_len = state->table_len ? state->table_len : GXFP_FDT_TABLE_CAP;
+	if (table_len > GXFP_FDT_TABLE_CAP)
+		table_len = GXFP_FDT_TABLE_CAP;
+
+	memset(payload, 0, GXFP_FDT_PAYLOAD_CAP);
+	payload[0] = command;
+	payload[1] = FDT_CMD_BASE_TYPE;
+	memcpy(payload + 2, table, table_len);
+
+	if (state->variant == GXFP_SENSOR_VARIANT_CHICAGOHS) {
+		len = 2 + table_len;
+		if (with_timestamp) {
+			struct timespec ts;
+			struct tm tm;
+			uint16_t stamp = 0;
+
+			if (clock_gettime(CLOCK_REALTIME, &ts) == 0 &&
+			    localtime_r(&ts.tv_sec, &tm) != NULL)
+				stamp = (uint16_t)(tm.tm_sec * 1000 +
+						   ts.tv_nsec / 1000000L);
+			payload[len++] = (uint8_t)(stamp & 0xff);
+			payload[len++] = (uint8_t)((stamp >> 8) & 0xff);
+		}
+		return (uint8_t)len;
+	}
+
+	len = 2 + table_len + GXFP_FDT_MILANG_TRAILER_LEN;
+	return (uint8_t)len;
+}
 
 void gxfp_cmd_fdt_state_init(struct gxfp_cmd_fdt_state *state)
 {
-    if (!state)
-        return;
+	if (!state)
+		return;
 
-    memset(state, 0, sizeof(*state));
-    state->base_table_inited = 1;
+	memset(state, 0, sizeof(*state));
+	state->variant = GXFP_SENSOR_VARIANT_MILANG;
+	state->table_len = GXFP_FDT_TABLE_CAP;
+	state->base_table_inited = 1;
+}
+
+void gxfp_cmd_fdt_state_set_variant(struct gxfp_cmd_fdt_state *state,
+				    enum gxfp_sensor_variant variant)
+{
+	const struct gxfp_sensor_variant_info *info =
+		gxfp_sensor_variant_info(variant);
+
+	if (!state)
+		return;
+
+	state->variant = variant;
+	state->table_len = info ? info->fdt_table_len : GXFP_FDT_TABLE_CAP;
+	if (!state->table_len || state->table_len > GXFP_FDT_TABLE_CAP)
+		state->table_len = GXFP_FDT_TABLE_CAP;
 }
 
 void gxfp_cmd_fdt_state_set_runtime(struct gxfp_cmd_fdt_state *state,
-                                    int second_flag,
-                                    int need_fdt_up_twice,
-                                    int diff_use,
-                                    int16_t dac_offset)
+				    int second_flag,
+				    int need_fdt_up_twice,
+				    int diff_use,
+				    int16_t dac_offset)
 {
-    if (!state)
-        return;
+	if (!state)
+		return;
 
-    state->up_second_flag = second_flag ? 1 : 0;
-    state->up_need_twice = need_fdt_up_twice ? 1 : 0;
-    state->up_diff_use = diff_use ? 1 : 0;
-    state->up_dac_offset = dac_offset;
-    state->up_round = 0;
-}
-
-static void fdt_down_payload_build(const struct gxfp_cmd_fdt_state *state,
-                                   uint8_t payload[FDT_PAYLOAD_SIZE_DOWN])
-{
-    if (!state)
-        return;
-
-    memset(payload, 0, FDT_PAYLOAD_SIZE_DOWN);
-    memcpy(payload + 0, (uint8_t[]){ FDT_CMD_DOWN_MAGIC_0, FDT_CMD_DOWN_MAGIC_1 }, 2);
-    memcpy(payload + 2, state->down_table_5130, GXFP_FDT_BASE_TABLE_LEN);
-}
-
-static void fdt_mode_payload_build(const struct gxfp_cmd_fdt_state *state,
-                                   uint8_t payload[FDT_PAYLOAD_SIZE_MODE])
-{
-    if (!state)
-        return;
-
-    memset(payload, 0, FDT_PAYLOAD_SIZE_MODE);
-    memcpy(payload + 0, (uint8_t[]){ FDT_CMD_MODE_MAGIC_0, FDT_CMD_MODE_MAGIC_1 }, 2);
-    memcpy(payload + 2, state->manual_table_5130, GXFP_FDT_BASE_TABLE_LEN);
-}
-
-static void fdt_up_payload_build(const struct gxfp_cmd_fdt_state *state,
-                                 uint8_t payload[FDT_PAYLOAD_SIZE_UP])
-{
-    if (!state)
-        return;
-
-    memset(payload, 0, FDT_PAYLOAD_SIZE_UP);
-    memcpy(payload + 0, (uint8_t[]){ FDT_CMD_UP_MAGIC_0, FDT_CMD_UP_MAGIC_1 }, 2);
-    memcpy(payload + 2, state->up_table_5130, GXFP_FDT_BASE_TABLE_LEN);
+	state->up_second_flag = second_flag ? 1 : 0;
+	state->up_need_twice = need_fdt_up_twice ? 1 : 0;
+	state->up_diff_use = diff_use ? 1 : 0;
+	state->up_dac_offset = dac_offset;
+	state->up_round = 0;
 }
 
 int gxfp_cmd_fdt_set_mode(struct gxfp_dev *dev,
-                          struct gxfp_cmd_fdt_state *state)
+			  struct gxfp_cmd_fdt_state *state)
 {
-    uint8_t payload_mode[FDT_PAYLOAD_SIZE_MODE];
+	uint8_t payload[GXFP_FDT_PAYLOAD_CAP];
+	uint8_t len;
 
-    if (!dev || !state)
-        return -EINVAL;
+	if (!dev || !state)
+		return -EINVAL;
 
-    memcpy(state->manual_table_5130, state->down_table_5130, GXFP_FDT_BASE_TABLE_LEN);
-
-    fdt_mode_payload_build(state, payload_mode);
-    return gxfp_goodix_send_async(dev,
-                                  GXFP_CMD_FDT_MODE,
-                                  payload_mode,
-                                  (uint16_t)FDT_PAYLOAD_SIZE_MODE);
+	memcpy(state->manual_table_5130, state->down_table_5130,
+	       state->table_len);
+	len = fdt_payload_build(state, FDT_CMD_MODE_MAGIC_0,
+				state->manual_table_5130, payload, 0);
+	return gxfp_goodix_send_async(dev, GXFP_CMD_FDT_MODE, payload, len);
 }
 
 int gxfp_cmd_fdt_send_down(struct gxfp_dev *dev,
-                           const struct gxfp_cmd_fdt_state *state)
+			   const struct gxfp_cmd_fdt_state *state)
 {
-    uint8_t payload_down[FDT_PAYLOAD_SIZE_DOWN];
+	uint8_t payload[GXFP_FDT_PAYLOAD_CAP];
+	uint8_t len;
 
-    if (!dev || !state)
-        return -EINVAL;
+	if (!dev || !state)
+		return -EINVAL;
 
-    fdt_down_payload_build(state, payload_down);
-    return gxfp_goodix_send_async(dev,
-                                  GXFP_CMD_FDT_DOWN,
-                                  payload_down,
-                                  (uint16_t)FDT_PAYLOAD_SIZE_DOWN);
+	len = fdt_payload_build(state, FDT_CMD_DOWN_MAGIC_0,
+				state->down_table_5130, payload, 1);
+	return gxfp_goodix_send_async(dev, GXFP_CMD_FDT_DOWN, payload, len);
 }
 
 int gxfp_cmd_fdt_send_up(struct gxfp_dev *dev,
-                         const struct gxfp_cmd_fdt_state *state)
+			 const struct gxfp_cmd_fdt_state *state)
 {
-    uint8_t payload_up[FDT_PAYLOAD_SIZE_UP];
+	uint8_t payload[GXFP_FDT_PAYLOAD_CAP];
+	uint8_t len;
 
-    if (!dev || !state)
-        return -EINVAL;
+	if (!dev || !state)
+		return -EINVAL;
 
-    fdt_up_payload_build(state, payload_up);
-    return gxfp_goodix_send_async(dev,
-                                  GXFP_CMD_FDT_UP,
-                                  payload_up,
-                                  (uint16_t)FDT_PAYLOAD_SIZE_UP);
+	len = fdt_payload_build(state, FDT_CMD_UP_MAGIC_0,
+				state->up_table_5130, payload, 0);
+	return gxfp_goodix_send_async(dev, GXFP_CMD_FDT_UP, payload, len);
 }

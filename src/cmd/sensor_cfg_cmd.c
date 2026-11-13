@@ -102,67 +102,79 @@ int gxfp_cmd_upload_config_mcu(struct gxfp_dev *dev,
 }
 
 
-int gxfp_cmd_set_dac(struct gxfp_dev *dev, uint16_t dac)
+int gxfp_cmd_set_dac_values(struct gxfp_dev *dev,
+			    const uint16_t *dacs,
+			    size_t dac_count)
 {
-    uint8_t payload[8] = {
-        (uint8_t)(dac & 0xff),
-        (uint8_t)((dac >> 8) & 0xff),
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    };
-    uint8_t rx[GXFP_MP_FRAME_MAX];
-    uint32_t rx_len = 0;
-    struct gxfp_frame_parsed frame;
-    int r;
+	uint8_t payload[8] = { 0 };
+	uint8_t rx[GXFP_MP_FRAME_MAX];
+	uint32_t rx_len = 0;
+	struct gxfp_frame_parsed frame;
+	size_t i;
+	int r;
 
-    if (!dev)
-        return -EINVAL;
+	if (!dev || !dacs || dac_count == 0 || dac_count > 4)
+		return -EINVAL;
 
-    r = gxfp_goodix_request_selected(dev,
-                                     GXFP_CMD_SET_DAC,
-                                     GXFP_CMD_SET_DAC,
-                                     payload,
-                                     (uint16_t)sizeof(payload),
-                                     rx,
-                                     (uint32_t)sizeof(rx),
-                                     &rx_len,
-                                     3,
-                                     200,
-                                     NULL,
-                                     NULL);
-    if (r < 0)
-        return r;
-    if (!gxfp_parse_goodix_body(rx, rx_len, &frame) ||
-        frame.cmd != GXFP_CMD_SET_DAC)
-        return -EBADMSG;
-    return 0;
+	for (i = 0; i < dac_count; i++) {
+		payload[i * 2] = (uint8_t)(dacs[i] & 0xff);
+		payload[i * 2 + 1] = (uint8_t)((dacs[i] >> 8) & 0xff);
+	}
+
+	r = gxfp_goodix_request_selected(dev,
+					 GXFP_CMD_SET_DAC,
+					 GXFP_CMD_SET_DAC,
+					 payload,
+					 (uint16_t)sizeof(payload),
+					 rx,
+					 (uint32_t)sizeof(rx),
+					 &rx_len,
+					 3,
+					 200,
+					 NULL,
+					 NULL);
+	if (r < 0)
+		return r;
+	if (!gxfp_parse_goodix_body(rx, rx_len, &frame) ||
+	    frame.cmd != GXFP_CMD_SET_DAC)
+		return -EBADMSG;
+	return 0;
 }
 
 int gxfp_cmd_verify_sensor_cfg(struct gxfp_dev *dev,
-                               uint16_t expected_dac,
-                               uint16_t expected_tcode)
+			       const struct gxfp_sensor_cfg *cfg)
 {
-    int attempt;
+	static const uint16_t dac_regs[] = { 0x0220, 0x0236, 0x0238, 0x023a };
+	int attempt;
 
-    if (!dev)
-        return -EINVAL;
+	if (!dev || !cfg)
+		return -EINVAL;
 
-    for (attempt = 0; attempt < 3; attempt++) {
-        uint16_t dac = 0;
-        uint16_t tcode = 0;
-        int r;
+	for (attempt = 0; attempt < 3; attempt++) {
+		uint16_t tcode = 0;
+		int ok = 1;
+		size_t i;
+		int r;
 
-        (void)gxfp_cmd_set_idle(dev);
+		(void)gxfp_cmd_set_idle(dev);
 
-        r = gxfp_cmd_read_reg_u16(dev, GXFP_MILANG_REG_DAC, &dac);
-        if (r < 0)
-            continue;
-        r = gxfp_cmd_read_reg_u16(dev, GXFP_MILANG_REG_TCODE, &tcode);
-        if (r < 0)
-            continue;
+		for (i = 0; i < cfg->dac_count; i++) {
+			uint16_t value = 0;
 
-        if (dac == expected_dac && tcode == expected_tcode)
-            return 0;
-    }
+			r = gxfp_cmd_read_reg_u16(dev, dac_regs[i], &value);
+			if (r < 0 || value != cfg->dac[i]) {
+				ok = 0;
+				break;
+			}
+		}
 
-    return -EIO;
+		if (!ok)
+			continue;
+		r = gxfp_cmd_read_reg_u16(dev, GXFP_MILANG_REG_TCODE, &tcode);
+		if (r < 0 || tcode != cfg->tcode)
+			continue;
+		return 0;
+	}
+
+	return -EIO;
 }

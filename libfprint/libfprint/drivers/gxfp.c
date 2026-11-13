@@ -21,9 +21,11 @@
 #include "gxfp/cmd/tls_cmd.h"
 #include "gxfp/flow/fdt.h"
 #include "gxfp/flow/milang_init.h"
+#include "gxfp/flow/sensor_bootstrap.h"
 #include "gxfp/io/dev.h"
 #include "gxfp/proto/goodix_constants.h"
 #include "gxfp/proto/mp_proto.h"
+#include "gxfp/proto/sensor_variant.h"
 #include "gxfp/tls/tls_constants.h"
 #include "gxfp/tls/tls_session.h"
 
@@ -31,7 +33,6 @@
 #define GXFP_DEFAULT_PSK_PATH "/var/lib/fprintd/gxfp/psk_raw32.bin"
 #define GXFP_TASK_TIMEOUT_MS 20000
 #define GXFP_RETRY_DELAY_MS 10
-#define GXFP_MILANG_CHIP_ID 0x2208
 
 enum gxfp_task_kind {
   GXFP_TASK_NONE = 0,
@@ -661,59 +662,19 @@ gxfp_start_capture (FpiDeviceGxfp *self)
 }
 
 static int
-gxfp_apply_milang_cfg (FpiDeviceGxfp *self)
+gxfp_apply_sensor_cfg (FpiDeviceGxfp *self,
+                       enum gxfp_sensor_variant variant)
 {
-  uint8_t otp[256];
-  uint16_t otp_len = 0;
-  struct gxfp_milang_otp_cfg otp_cfg;
-  const uint8_t *template_data = NULL;
-  size_t template_len = 0;
-  uint8_t cfg_blob[GXFP_MILANG_CFG_LEN];
-  uint8_t ack_status = 0xff;
-  int cfg_blob_len;
+  struct gxfp_sensor_cfg cfg;
   int r;
 
-  r = gxfp_cmd_read_otp (&self->dev, otp, (uint16_t) sizeof (otp), &otp_len);
+  r = gxfp_sensor_bootstrap (&self->dev, variant, &self->fdt.cmd, &cfg);
   if (r < 0)
     return r;
 
-  r = gxfp_milang_parse_otp (otp, (size_t) otp_len, &otp_cfg);
-  if (r < 0)
-    return r;
-
-  r = gxfp_milang_get_default_cfg_template (&template_data, &template_len);
-  if (r < 0)
-    return r;
-
-  cfg_blob_len = gxfp_milang_prepare_cfg_blob (template_data, template_len,
-                                               cfg_blob, sizeof (cfg_blob));
-  if (cfg_blob_len < 0)
-    return cfg_blob_len;
-
-  r = gxfp_milang_apply_otp_patch (cfg_blob, (size_t) cfg_blob_len, &otp_cfg);
-  if (r < 0)
-    return r;
-
-  gxfp_cmd_fdt_state_set_runtime (&self->fdt.cmd, 0, 0, 0,
-                                  otp_cfg.has_tcode_delta ?
-                                  (int16_t) otp_cfg.fdt_delta : 0);
-
-  r = gxfp_milang_prepare_config (&self->dev, otp_cfg.dac);
-  if (r < 0)
-    return r;
-
-  r = gxfp_cmd_upload_config_mcu (&self->dev, cfg_blob,
-                                  (uint16_t) cfg_blob_len, &ack_status);
-  if (r < 0)
-    return r;
-
-  r = gxfp_cmd_verify_sensor_cfg (&self->dev, otp_cfg.dac, otp_cfg.tcode);
-  if (r < 0)
-    return r;
-
-  self->otp_tcode = otp_cfg.tcode;
-  self->otp_fdt_delta = otp_cfg.fdt_delta;
-  self->otp_has_tcode_delta = otp_cfg.has_tcode_delta;
+  self->otp_tcode = cfg.tcode;
+  self->otp_fdt_delta = cfg.fdt_delta;
+  self->otp_has_tcode_delta = cfg.has_tcode_delta;
   return 0;
 }
 
@@ -786,14 +747,21 @@ gxfp_img_open (FpImageDevice *dev)
   r = gxfp_cmd_read_chip_id (&self->dev, &chip_id);
   if (r < 0)
     fp_dbg ("read chip id failed: %s", g_strerror (-r));
-  else if (chip_id == GXFP_MILANG_CHIP_ID)
+  else
     {
-      r = gxfp_apply_milang_cfg (self);
-      if (r < 0)
+      enum gxfp_sensor_variant variant =
+        gxfp_sensor_variant_from_chip_id (chip_id);
+
+      if (variant == GXFP_SENSOR_VARIANT_MILANG ||
+          variant == GXFP_SENSOR_VARIANT_CHICAGOHS)
         {
-          g_set_error (&error, G_IO_ERROR, g_io_error_from_errno (-r),
-                       "OTP/config bootstrap failed: %s", g_strerror (-r));
-          goto fail;
+          r = gxfp_apply_sensor_cfg (self, variant);
+          if (r < 0)
+            {
+              g_set_error (&error, G_IO_ERROR, g_io_error_from_errno (-r),
+                           "OTP/config bootstrap failed: %s", g_strerror (-r));
+              goto fail;
+            }
         }
     }
 

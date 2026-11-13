@@ -17,6 +17,8 @@ void gxfp_le32enc(uint8_t out[4], uint32_t v);
 
 int64_t gxfp_monotonic_ms(void);
 
+uint8_t gxfp_crc8(const uint8_t *data, size_t len);
+
 int gxfp_align_blob(uint8_t **blob, size_t *len);
 
 #ifdef __cplusplus

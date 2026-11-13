@@ -2,6 +2,7 @@
 
 #include "gxfp/io/dev.h"
 #include "gxfp/io/uapi.h"
+#include "gxfp/proto/sensor_variant.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -14,6 +15,8 @@ struct gxfp_cmd_fdt_state {
     uint8_t down_table_5130[24];
     uint8_t up_table_5130[24];
     uint8_t manual_table_5130[24];
+    enum gxfp_sensor_variant variant;
+    uint8_t table_len;
     int base_table_inited;
     int up_second_flag;
     int up_need_twice;
@@ -23,6 +26,8 @@ struct gxfp_cmd_fdt_state {
 };
 
 void gxfp_cmd_fdt_state_init(struct gxfp_cmd_fdt_state *state);
+void gxfp_cmd_fdt_state_set_variant(struct gxfp_cmd_fdt_state *state,
+                                    enum gxfp_sensor_variant variant);
 void gxfp_cmd_fdt_state_set_runtime(struct gxfp_cmd_fdt_state *state,
                                     int second_flag,
                                     int need_fdt_up_twice,

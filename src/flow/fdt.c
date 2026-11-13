@@ -4,6 +4,7 @@
 #include "gxfp/proto/goodix_cmd.h"
 #include "gxfp/proto/goodix_constants.h"
 #include "gxfp/proto/goodix_proto.h"
+#include "gxfp/proto/sensor_variant.h"
 #include "gxfp/algo/common.h"
 
 #include <errno.h>
@@ -40,8 +41,21 @@ static bool fdt_base_valid(const uint8_t *raw, size_t raw_len)
 	return true;
 }
 
+static size_t fdt_entry_count(size_t raw_len, size_t table_len)
+{
+	size_t raw_entries = raw_len / sizeof(uint16_t);
+	size_t table_entries = table_len / sizeof(uint16_t);
+
+	if (raw_entries > table_entries)
+		raw_entries = table_entries;
+	if (raw_entries > GXFP_FDT_BASE_UPDATE_ENTRIES)
+		raw_entries = GXFP_FDT_BASE_UPDATE_ENTRIES;
+	return raw_entries;
+}
+
 static void fdt_downbase_from_raw(const uint8_t *raw_base,
 				  size_t raw_len,
+				  size_t table_len,
 				  uint8_t out_table[GXFP_FDT_BASE_TABLE_LEN])
 {
 	size_t i;
@@ -50,9 +64,7 @@ static void fdt_downbase_from_raw(const uint8_t *raw_base,
 	if (!raw_base || !out_table || raw_len < 2)
 		return;
 
-	entries = raw_len / 2;
-	if (entries > GXFP_FDT_BASE_UPDATE_ENTRIES)
-		entries = GXFP_FDT_BASE_UPDATE_ENTRIES;
+	entries = fdt_entry_count(raw_len, table_len);
 
 	for (i = 0; i < entries; i++) {
 		uint16_t raw = gxfp_le16(raw_base + (i * 2));
@@ -64,12 +76,14 @@ static void fdt_downbase_from_raw(const uint8_t *raw_base,
 	}
 }
 
-static void fdt_upbase_from_raw(uint16_t touchflag,
+static void fdt_upbase_from_raw(enum gxfp_sensor_variant variant,
+				uint16_t touchflag,
 				int second_flag,
 				int diff_use,
 				int16_t dac_offset,
 				const uint8_t *raw_base,
 				size_t raw_len,
+				size_t table_len,
 				uint8_t out_table[GXFP_FDT_BASE_TABLE_LEN])
 {
 	size_t i;
@@ -79,9 +93,7 @@ static void fdt_upbase_from_raw(uint16_t touchflag,
 	if (!raw_base || !out_table || raw_len < 2)
 		return;
 
-	entries = raw_len / 2;
-	if (entries > GXFP_FDT_BASE_UPDATE_ENTRIES)
-		entries = GXFP_FDT_BASE_UPDATE_ENTRIES;
+	entries = fdt_entry_count(raw_len, table_len);
 
 	memcpy(merged, out_table, sizeof(merged));
 
@@ -89,12 +101,21 @@ static void fdt_upbase_from_raw(uint16_t touchflag,
 		uint16_t raw = gxfp_le16(raw_base + (i * 2));
 		uint16_t half = (uint16_t)((raw >> 1) & 0xffffu);
 		uint16_t offset = (dac_offset == 0) ? FDT_UP_DEFAULT_OFFSET : (uint16_t)dac_offset;
-		uint16_t encoded = (uint16_t)(((half + offset) << 8) | (half + offset));
+		uint16_t encoded;
 		uint16_t prev;
+
+		if (variant == GXFP_SENSOR_VARIANT_CHICAGOHS)
+			encoded = (uint16_t)(((half + offset) << 8) | 0x80u);
+		else
+			encoded = (uint16_t)(((half + offset) << 8) | (half + offset));
 
 		if (second_flag == 0 && ((touchflag >> i) & 0x1u) == 0) {
 			if (dac_offset == 0)
-				encoded = (uint16_t)((encoded >> 8) | FDT_UP_NOTOUCH_FALLBACK);
+				encoded = (variant == GXFP_SENSOR_VARIANT_CHICAGOHS) ?
+					0x1380u :
+					(uint16_t)((encoded >> 8) | FDT_UP_NOTOUCH_FALLBACK);
+			else if (variant == GXFP_SENSOR_VARIANT_CHICAGOHS)
+				encoded = (uint16_t)(((uint16_t)(dac_offset - 2) << 8) | 0x80u);
 			else
 				encoded = (uint16_t)((((uint16_t)(dac_offset - 2)) << 8) | (encoded >> 8));
 		}
@@ -132,8 +153,8 @@ static bool fdt_base_table_update_from_frame(struct gxfp_cmd_fdt_state *state,
 		touchflag = gxfp_le16(frame->payload + 2);
 		raw_base = frame->payload + 4;
 		raw_len = frame->payload_len - 4;
-		if (raw_len > (GXFP_FDT_BASE_UPDATE_ENTRIES * 2))
-			raw_len = GXFP_FDT_BASE_UPDATE_ENTRIES * 2;
+		if (raw_len > state->table_len)
+			raw_len = state->table_len;
 
 		if (!fdt_base_valid(raw_base, raw_len))
 			return false;
@@ -143,12 +164,14 @@ static bool fdt_base_table_update_from_frame(struct gxfp_cmd_fdt_state *state,
 			state->up_round ^= 1;
 		}
 
-		fdt_upbase_from_raw(touchflag,
+		fdt_upbase_from_raw(state->variant,
+				   touchflag,
 				   second_flag,
 				   state->up_diff_use,
 				   state->up_dac_offset,
 				   raw_base,
 				   raw_len,
+				   state->table_len,
 				   state->up_table_5130);
 		return true;
 	}
@@ -164,13 +187,14 @@ static bool fdt_base_table_update_from_frame(struct gxfp_cmd_fdt_state *state,
 
 		raw_base = frame->payload + 4;
 		raw_len = frame->payload_len - 4;
-		if (raw_len > (GXFP_FDT_BASE_UPDATE_ENTRIES * 2))
-			raw_len = GXFP_FDT_BASE_UPDATE_ENTRIES * 2;
+		if (raw_len > state->table_len)
+			raw_len = state->table_len;
 
 		if (!fdt_base_valid(raw_base, raw_len))
 			return false;
 
-		fdt_downbase_from_raw(raw_base, raw_len, state->down_table_5130);
+		fdt_downbase_from_raw(raw_base, raw_len, state->table_len,
+				      state->down_table_5130);
 		return true;
 	}
 
