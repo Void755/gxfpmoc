@@ -972,6 +972,8 @@ fpi_device_gxfp_class_init (FpiDeviceGxfpClass *klass)
   img_class->activate = gxfp_activate;
   img_class->deactivate = gxfp_deactivate;
   img_class->change_state = gxfp_change_state;
+
+  fpi_device_class_auto_initialize_features (dev_class);
 }
 
 static void
