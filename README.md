@@ -56,12 +56,12 @@ The sensor uses TLS-PSK for session encryption. See [PSK.md](PSK.md) for details
 
 The sensor is identified via ACPI as `GXFP5130` and connects over eSPI (not the usual SPI or USB).
 
-| Device | Sensor ID | Sensor Size | MCU Firmware | Status |
+| Device | ACPI ID | Chip ID | MCU Firmware | Status |
 |---|---|---|---|---|
-| MateBook GT 14 | ACPI/GXFP5130 | 176×54 | GF_GCC_EC_20061 | 🟢 |
-| MateBook 14 2024 | ACPI/GXFP5130 | 64×80 | GF_GCC_EC_20068 | 🟡 |
-| MateBook X Pro 2024 | ACPI/GXFP5130 | - | GF_GCC_EC_20068 | 🟡 |
-| MateBook X Pro 2024 | ACPI/SIL6250 | - | - | 🔴 ¹ |
+| MateBook GT 14 | GXFP5130 | 0x2208 (MilanG) | GF_GCC_EC_20061 | 🟢 |
+| MateBook 14 2024 | GXFP5130 | 0x2504 (ChicagoHS) | GF_GCC_EC_20068 | 🟢 |
+| MateBook X Pro 2024 | GXFP5130 | ? | GF_GCC_EC_20068 | ? |
+| MateBook X Pro 2024 | SIL6250 | - | - | 🔴 ¹ |
 
 ¹ See [gxfp_linux_driver#1](https://github.com/Void755/gxfp_linux_driver/issues/1)
 
